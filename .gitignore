@@ -1,0 +1,13 @@
+node_modules/
+*.log
+.DS_Store
+.claude/
+user/
+.update-*/
+release-temp/
+dist/
+.workbuddy/
+*.zip
+*.exe
+*.ico
+.env

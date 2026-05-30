@@ -1,0 +1,36 @@
+{
+  "name": "codex-assistant",
+  "version": "1.1.0",
+  "description": "Zero-dependency local proxy: translates OpenAI Responses API to Chat Completions for DeepSeek, Xiaomi MiMo, and OpenAI behind a single base_url — Codex Assistant",
+  "main": "proxy.mjs",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wujfeng712-ui/Codex-Assistant.git"
+  },
+  "scripts": {
+    "start": "node --env-file=user/.env proxy.mjs",
+    "smoke": "./scripts/smoke.sh",
+    "test": "node --test tests/protocol.test.mjs"
+  },
+  "keywords": [
+    "codex",
+    "codex-cli",
+    "deepseek",
+    "deepseek-v4",
+    "mimo",
+    "openai",
+    "proxy",
+    "responses-api",
+    "chat-completions"
+  ],
+  "license": "MIT",
+  "directories": {
+    "test": "tests"
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/wujfeng712-ui/Codex-Assistant/issues"
+  },
+  "homepage": "https://github.com/wujfeng712-ui/Codex-Assistant#readme"
+}

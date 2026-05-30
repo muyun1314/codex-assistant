@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codex Assistant</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;650;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/ui-frontend.css">
+</head>
+<body>
+
+<!-- ========== Sidebar ========== -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="sidebar-brand-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="16 18 22 12 16 6"></polyline>
+        <polyline points="8 6 2 12 8 18"></polyline>
+      </svg>
+    </div>
+    <div>
+      <div class="sidebar-brand-text">Codex Assistant</div>
+      <div class="sidebar-brand-sub">Proxy Manager</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-item active" data-page="dashboard" onclick="showPage('dashboard', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7"></rect>
+        <rect x="14" y="3" width="7" height="7"></rect>
+        <rect x="14" y="14" width="7" height="7"></rect>
+        <rect x="3" y="14" width="7" height="7"></rect>
+      </svg>
+      <span>仪表盘</span>
+    </div>
+    <div class="nav-item" data-page="providers" onclick="showPage('providers', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+      </svg>
+      <span>提供商</span>
+    </div>
+    <div class="nav-item" data-page="env" onclick="showPage('env', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+      <span>环境配置</span>
+    </div>
+    <div class="nav-item" data-page="logs" onclick="showPage('logs', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <line x1="16" y1="13" x2="8" y2="13"></line>
+        <line x1="16" y1="17" x2="8" y2="17"></line>
+        <polyline points="10 9 9 9 8 9"></polyline>
+      </svg>
+      <span>运行日志</span>
+    </div>
+
+    <div class="nav-spacer"></div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="version-info" id="version-info">
+      <span class="version-text" id="current-version">v1.1.0</span>
+      <button class="btn btn-xs btn-ghost update-badge" id="btn-check-update" onclick="checkForUpdates()" title="检查版本更新">
+        检查版本更新
+      </button>
+    </div>
+    <button class="theme-toggle" id="btn-theme" onclick="toggleTheme()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="icon-theme">
+        <circle cx="12" cy="12" r="5"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line>
+        <line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+      <span>浅色模式</span>
+    </button>
+  </div>
+</aside>
+
+<!-- ========== Main Content ========== -->
+<main class="main">
+
+<div class="main-inner">
+
+  <!-- ===== Dashboard ===== -->
+  <div class="page active" id="page-dashboard">
+    <div class="page-header">
+      <h1 class="page-title">仪表盘</h1>
+      <p class="page-subtitle">Codex 代理服务器运行状态与快捷管理</p>
+    </div>
+
+    <!-- Status Cards -->
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">代理状态</div>
+        <div class="stat-value">
+          <span class="status-dot" id="s-dot-proxy"></span>
+          <span id="s-text-proxy">检测中...</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Codex 状态</div>
+        <div class="stat-value">
+          <span class="status-dot" id="s-dot-codex"></span>
+          <span class="status-text-sm" id="s-text-codex">检测中...</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">已加载模型</div>
+        <div class="stat-value" id="s-models">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">运行时间</div>
+        <div class="stat-value" id="s-uptime">--</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">代理端口</div>
+        <div class="stat-value" id="s-port">4000</div>
+      </div>
+    </div>
+
+    <!-- Current Model -->
+    <div class="card" id="model-display-card" style="display:none">
+      <h2>当前应用模型</h2>
+      <div class="model-display" id="current-model-display"></div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card">
+      <h2>快捷操作</h2>
+      <div class="quick-actions">
+        <button class="btn btn-primary" id="btn-proxy" onclick="toggleProxy()">启动代理</button>
+        <button class="btn btn-secondary" id="btn-codex-cli" onclick="startCodex('cli')" disabled>启动 Codex CLI</button>
+        <button class="btn btn-secondary" id="btn-codex-app" onclick="startCodex('app')" disabled>启动 Codex 桌面版</button>
+        <button class="btn btn-secondary" id="btn-codexpp" onclick="startCodex('codexpp')" disabled>启动 Codex++</button>
+        <button class="btn btn-secondary" id="btn-codexpp-manager" onclick="startCodex('codexpp-manager')" disabled>Codex++ 管理工具</button>
+        <button class="btn btn-danger" onclick="stopCodex()">停止 Codex</button>
+        <button class="btn btn-secondary" onclick="restartProxy()">重启代理</button>
+      </div>
+    </div>
+
+    <!-- Quick Config -->
+    <div class="card">
+      <h2>快速配置 Codex</h2>
+      <p style="color:var(--text-secondary);font-size:var(--text-sm);margin-bottom:var(--space-4);">
+        选择提供商和模型，一键写入 Codex 配置文件
+      </p>
+      <div class="form-row">
+        <select id="quick-provider" onchange="onProviderChange()">
+          <option value="">选择提供商</option>
+        </select>
+        <select id="quick-model">
+          <option value="">先选择提供商</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label style="margin:0;white-space:nowrap;align-self:center;">辅助模型</label>
+        <select id="quick-aux-provider" onchange="onAuxProviderChange()">
+          <option value="">跟随主模型</option>
+        </select>
+        <select id="quick-aux-model">
+          <option value="">跟随主模型</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="quickApply()">应用配置到 Codex</button>
+    </div>
+
+  </div>
+
+  <!-- ===== Providers ===== -->
+  <div class="page" id="page-providers">
+    <div class="page-header">
+      <h1 class="page-title">提供商管理</h1>
+      <p class="page-subtitle">
+        添加 OpenAI 兼容的 API 提供商，自动拉取可用模型列表
+      </p>
+    </div>
+
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <button class="btn btn-primary" onclick="showProviderModal()">添加提供商</button>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn btn-secondary" onclick="exportConfig()">导出配置</button>
+        <button class="btn btn-secondary" onclick="importConfig()">导入配置</button>
+        <button class="btn btn-ghost" onclick="generateModels()">重新生成 proxy-models.json</button>
+      </div>
+    </div>
+
+    <div id="provider-list"></div>
+  </div>
+
+  <!-- ===== ENV Config ===== -->
+  <div class="page" id="page-env">
+    <div class="page-header">
+      <h1 class="page-title">环境配置</h1>
+      <p class="page-subtitle">编辑代理启动时读取的环境变量，修改后需重启生效</p>
+    </div>
+
+    <!-- Codex++ Config -->
+    <div class="card">
+      <h2>Codex++ 配置</h2>
+      <p class="form-hint" style="margin-bottom:var(--space-3);">手动指定 Codex++ 安装路径，选择主程序后自动关联管理工具</p>
+      <div class="form-row">
+        <div>
+          <label>Codex++ 主程序</label>
+          <div style="display:flex;gap:var(--space-2);">
+            <input id="cfg-codexpp-path" placeholder="未检测到，请手动选择" style="flex:1;margin-bottom:0;" readonly>
+            <button class="btn btn-secondary" onclick="selectCodexppPath()" style="white-space:nowrap;">选择文件</button>
+          </div>
+        </div>
+        <div>
+          <label>Codex++ 管理工具</label>
+          <input id="cfg-codexpp-mgr-path" placeholder="自动关联" style="margin-bottom:0;" readonly>
+        </div>
+      </div>
+      <div class="btn-group" style="margin-top:var(--space-3);">
+        <button class="btn btn-primary" onclick="saveCodexppConfig()">保存路径</button>
+        <button class="btn btn-secondary" onclick="autoDetectCodexpp()">自动检测</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="env-form"></div>
+      <div class="btn-group" style="margin-top:var(--space-4);">
+        <button class="btn btn-primary" onclick="saveEnv()">保存配置</button>
+        <button class="btn btn-secondary" onclick="saveEnvAndRestart()">保存并重启代理</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Logs ===== -->
+  <div class="page" id="page-logs">
+    <div class="page-header">
+      <h1 class="page-title">运行日志</h1>
+      <p class="page-subtitle">查看代理运行日志，实时追踪请求处理过程</p>
+    </div>
+
+    <!-- Log Config -->
+    <div class="card">
+      <h2>日志配置</h2>
+      <div class="form-row">
+        <div>
+          <label>日志级别</label>
+          <select id="log-level">
+            <option value="silent">静默（不输出）</option>
+            <option value="error">仅错误</option>
+            <option value="warn">错误 + 警告</option>
+            <option value="info" selected>正常（默认）</option>
+            <option value="debug">详细（调试）</option>
+          </select>
+        </div>
+        <div>
+          <label>日志保留天数</label>
+          <input id="log-retention" type="number" min="1" max="30" value="3" style="width:80px;margin-bottom:0;">
+          <div class="form-hint">可设置 1-30 天，超时日志自动清理</div>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveLogConfig()">保存日志配置</button>
+        <button class="btn btn-secondary" onclick="saveLogConfigAndRestart()">保存并重启代理</button>
+      </div>
+    </div>
+
+    <!-- Log Viewer -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-4);flex-wrap:wrap;gap:var(--space-2);">
+        <h2 style="margin-bottom:0;">代理日志</h2>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+          <div class="log-filters">
+            <button class="log-filter-btn active" id="log-filter-all" onclick="setLogFilter('all')">全部</button>
+            <button class="log-filter-btn" id="log-filter-stdout" onclick="setLogFilter('stdout')">标准输出</button>
+            <button class="log-filter-btn" id="log-filter-stderr" onclick="setLogFilter('stderr')">错误</button>
+            <button class="log-filter-btn" id="log-filter-system" onclick="setLogFilter('system')">系统</button>
+          </div>
+          <button class="btn btn-sm btn-ghost" onclick="loadLogs()">刷新</button>
+          <button class="btn btn-sm btn-ghost" onclick="exportLogs()">导出</button>
+        </div>
+      </div>
+      <div class="log-box" id="log-box"></div>
+    </div>
+  </div>
+
+</div><!-- .main-inner -->
+</main>
+
+<!-- ========== Toast ========== -->
+<div class="toast" id="toast"></div>
+
+<!-- ========== Provider Modal ========== -->
+<div class="modal-mask" id="provider-modal">
+  <div class="modal">
+    <h2 id="pm-title">添加提供商</h2>
+    <input type="hidden" id="pm-idx" value="-1">
+
+    <label>名称</label>
+    <input id="pm-name" placeholder="例如：MiMo API、DeepSeek">
+
+    <label>API 地址 (base_url)</label>
+    <input id="pm-base" placeholder="例如：https://api.example.com/v1">
+
+    <label>API Key</label>
+    <input id="pm-key" type="password" placeholder="sk-... 或环境变量名">
+
+    <label>协议类型</label>
+    <select id="pm-protocol">
+      <option value="openai">OpenAI 兼容 (/v1/models, /v1/chat/completions)</option>
+      <option value="custom">自定义（手动填写模型列表）</option>
+    </select>
+
+    <div id="pm-fetch-area" style="margin-top:var(--space-4);">
+      <button class="btn btn-secondary" onclick="fetchModels()" id="btn-fetch">自动获取模型列表</button>
+      <div class="fetch-status" id="pm-fetch-status"></div>
+      <div class="checkbox-list" id="pm-model-list" style="display:none;"></div>
+      <div class="form-hint" id="pm-model-hint" style="display:none;">勾选要添加的模型，然后点击保存</div>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn btn-primary" onclick="saveProvider()">保存</button>
+      <button class="btn btn-secondary" onclick="closeProviderModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script src="/ui-frontend.js"></script>
+</body>
+</html>
