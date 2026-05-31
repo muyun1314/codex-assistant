@@ -1,6 +1,7 @@
-{
-  "version": "1.1.0",
-  "build": 1,
-  "releasedAt": "2026-05-29",
-  "changelog": "Initial release with auto-update support"
+﻿{
+  "version": "1.2.0",
+  "build": 2,
+  "releasedAt": "2026-05-31",
+  "changelog": "Tauri native window, built-in Node.js, one-click build, portable version"
 }
+

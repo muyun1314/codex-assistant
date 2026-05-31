@@ -1,17 +1,21 @@
 {
   "name": "codex-assistant",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Zero-dependency local proxy: translates OpenAI Responses API to Chat Completions for DeepSeek, Xiaomi MiMo, and OpenAI behind a single base_url — Codex Assistant",
   "main": "proxy.mjs",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wujfeng712-ui/Codex-Assistant.git"
+    "url": "git+https://github.com/muyun1314/codex-assistant.git"
   },
   "scripts": {
     "start": "node --env-file=user/.env proxy.mjs",
     "smoke": "./scripts/smoke.sh",
-    "test": "node --test tests/protocol.test.mjs"
+    "test": "node --test tests/protocol.test.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:debug": "tauri build --debug"
   },
   "keywords": [
     "codex",
@@ -30,7 +34,10 @@
   },
   "author": "",
   "bugs": {
-    "url": "https://github.com/wujfeng712-ui/Codex-Assistant/issues"
+    "url": "https://github.com/muyun1314/codex-assistant/issues"
   },
-  "homepage": "https://github.com/wujfeng712-ui/Codex-Assistant#readme"
+  "homepage": "https://github.com/muyun1314/codex-assistant#readme",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
 }
