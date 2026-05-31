@@ -40,7 +40,7 @@ Codex Assistant 在两者之间**双向转换** — 包含流式 SSE、工具调
 ### 方式一：桌面应用（推荐，Windows）
 
 1. 从 [Releases](https://github.com/wujfeng712-ui/Codex-Assistant/releases) 页面下载 `CodexAssistant.zip`
-2. 解压到任意目录（无需安装）
+2. 解压到任意纯英文目录！纯英文目录！纯英文目录（无需安装）
 3. 双击 `CodexAssistant.exe` 启动
 4. 首次启动会自动生成访问密钥，并在浏览器中打开管理界面
 
