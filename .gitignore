@@ -11,3 +11,7 @@ dist/
 *.exe
 *.ico
 .env
+.ui-port
+src-tauri/target/
+src-tauri/resources/node/
+release-notes.md

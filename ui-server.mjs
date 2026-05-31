@@ -4,9 +4,10 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { spawn, exec, execFile, execSync, execFileSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import {
   stripEndpointSuffix, normalizeModelsUrl, buildModelCandidateUrls,
-  requestModelsOnce, fetchModelsFromAPI, sendJson as _sendJson
+  requestModelsOnce, fetchModelsFromAPI
 } from './src/shared.mjs';
 import {
   isEncrypted, encryptApiKeyWithPrefix, tryDecryptApiKey,
@@ -14,7 +15,7 @@ import {
 } from './src/crypto-store.mjs';
 
 var UI_PORT = parseInt(process.env.UI_PORT, 10) || 8788;
-var PROJECT_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\//, ''));
+var PROJECT_DIR = path.dirname(fileURLToPath(import.meta.url));
 var USER_DIR = path.join(PROJECT_DIR, 'user');
 var CODEXPP_CONFIG_FILE = path.join(USER_DIR, 'codexpp-config.json');
 var CODEX_CONFIG_DIR = path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex');

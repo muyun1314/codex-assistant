@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicedoc/schema/master/capability.json",
+  "identifier": "default",
+  "description": "Default capability for Codex Assistant",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:default"
+  ]
+}
