@@ -85,7 +85,7 @@ initUserDir();
 // GLOBAL_ENV_KEYS defines the allowed keys for .env (non-provider settings).
 // Provider API keys now live exclusively in provider-configs.json (encrypted).
 var GLOBAL_ENV_KEYS = [
-  'PROXY_PORT', 'PROXY_AUTH_KEY', 'DEFAULT_PROVIDER', 'LOG_LEVEL',
+  'PROXY_PORT', 'PROXY_AUTH_KEY', 'DEFAULT_PROVIDER', 'DEFAULT_MODEL', 'LOG_LEVEL',
   'LOG_RETENTION_DAYS', 'UPSTREAM_TIMEOUT_MS', 'STORE_TTL_MS', 'STORE_MAX',
   'MAX_CONSECUTIVE_TOOL_CALLS', 'FETCH_TIMEOUT_MS', 'FETCH_MAX_BODY',
   'MAX_FETCH_LOOPS', 'DEEPSEEK_DISABLE_THINKING', 'DEEPSEEK_REASONING_EFFORT',
@@ -1101,6 +1101,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // API: 打开外部链接
+  if (pathname === '/api/open-url' && method === 'POST') {
+    try {
+      var body = await collectBody(req);
+      var data = JSON.parse(body || '{}');
+      var url = data.url || '';
+      if (!url) return sendJson(res, 400, { success: false, error: 'url is required' });
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return sendJson(res, 400, { success: false, error: 'Only http/https URLs allowed' });
+      }
+      exec('start "" "' + url.replace(/"/g, '\\"') + '"', { shell: true });
+      return sendJson(res, 200, { success: true });
+    } catch (e) {
+      return sendJson(res, 500, { success: false, error: e.message });
+    }
+  }
+
   // API: 状态
   if (pathname === '/api/status' && method === 'GET') {
     const env = readEnv();
@@ -1134,6 +1151,15 @@ const server = http.createServer(async (req, res) => {
     try {
       var body = await collectBody(req);
       var data = JSON.parse(body);
+      // Silently normalize base_url: strip /chat/completions, /completions, /embeddings suffixes
+      if (data.providers) {
+        data.providers = data.providers.map(function(p) {
+          if (p.base_url) {
+            p.base_url = p.base_url.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '').replace(/\/completions$/i, '').replace(/\/embeddings$/i, '');
+          }
+          return p;
+        });
+      }
       writeProviders(data);
       generateProxyModels();
       return sendJson(res, 200, { success: true });
@@ -1413,6 +1439,45 @@ type = "openai-compatible"
     }
   }
 
+  // API: 保存文件（弹出保存对话框）
+  if (pathname === '/api/save-file' && method === 'POST') {
+    try {
+      var body = await collectBody(req);
+      var data = JSON.parse(body || '{}');
+      var title = data.title || '保存文件';
+      var content = data.content || '';
+      var defaultName = data.defaultName || 'export.json';
+      var filter = data.filter || 'JSON 文件 (*.json)|*.json|所有文件 (*.*)|*.*';
+
+      var psScript = [
+        'Add-Type -AssemblyName System.Windows.Forms',
+        '$saveDialog = New-Object System.Windows.Forms.SaveFileDialog',
+        '$saveDialog.Title = "' + title.replace(/"/g, '""') + '"',
+        '$saveDialog.FileName = "' + defaultName.replace(/"/g, '""') + '"',
+        '$saveDialog.Filter = "' + filter + '"',
+        '$saveDialog.OverwritePrompt = $true',
+        '$result = $saveDialog.ShowDialog()',
+        'if ($result -eq [System.Windows.Forms.DialogResult]::OK) {',
+        '  $saveDialog.FileName',
+        '}'
+      ];
+
+      var savePath = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript.join('\n')], {
+        encoding: 'utf8',
+        timeout: 60000
+      }).trim();
+
+      if (savePath) {
+        fs.writeFileSync(savePath, content, 'utf-8');
+        return sendJson(res, 200, { success: true, path: savePath });
+      } else {
+        return sendJson(res, 200, { success: false, message: '未选择保存路径' });
+      }
+    } catch (e) {
+      return sendJson(res, 500, { success: false, error: e.message });
+    }
+  }
+
   // API: 选择文件夹
   if (pathname === '/api/select-folder' && method === 'POST') {
     try {
@@ -1482,20 +1547,12 @@ type = "openai-compatible"
   if (pathname === '/api/export-config' && method === 'GET') {
     try {
       const providers = readProviders();
-      const env = readEnv();
-      const safeEnv = {};
-      const ENV_EXPORT_KEYS = ['PROXY_PORT','DEFAULT_PROVIDER','LOG_LEVEL','UPSTREAM_TIMEOUT_MS','STORE_TTL_MS','STORE_MAX','MAX_CONSECUTIVE_TOOL_CALLS'];
-      for (const k of ENV_EXPORT_KEYS) {
-        if (env[k]) safeEnv[k] = env[k];
-      }
-      // 不导出 PROXY_AUTH_KEY，每台机器各自随机生成
       const safeProviders = (providers.providers || []).map(p => ({
         name: p.name, base_url: p.base_url, protocol: p.protocol,
-        model_count: (p.models || []).length,
         models: p.models || [],
-        api_key: p.api_key || '',  // readProviders() 已自动解密，这里是明文
+        api_key: p.api_key || '',
       }));
-      return sendJson(res, 200, { version: '1.0.0', exported_at: new Date().toISOString(), env: safeEnv, providers: safeProviders });
+      return sendJson(res, 200, { providers: safeProviders });
     } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
 

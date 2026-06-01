@@ -68,7 +68,11 @@ if errorlevel 1 (
     echo [ERROR] Release build failed!
     goto :fail
 )
-echo [OK] Installer: src-tauri\target\release\bundle\
+echo [OK] Installer built, copying to dist...
+if not exist "dist" mkdir "dist"
+for %%f in ("src-tauri\target\release\bundle\nsis\*.exe") do copy /y "%%f" "dist\codex-assistant-setup.exe" >nul
+for %%f in ("src-tauri\target\release\bundle\msi\*.msi") do copy /y "%%f" "dist\codex-assistant.msi" >nul
+echo [OK] Installers copied to dist\
 echo.
 :skip_release
 
@@ -129,7 +133,7 @@ echo   [7/7] Creating launcher...
 > "%PORTABLE_DIR%\Start.cmd" (
     echo @echo off
     echo cd /d "%%~dp0"
-    echo start "" "codex-assistant.exe"
+    echo start "" /min "codex-assistant.exe"
 )
 > "%PORTABLE_DIR%\README-PORTABLE.txt" (
     echo Codex Assistant v%VERSION% Portable
@@ -163,19 +167,19 @@ echo.
 :: ---------- Done ----------
 echo.
 echo ============================================================
-echo   Build complete!
+echo   Build complete! All outputs in dist\
 echo ============================================================
 if exist "src-tauri\target\debug\codex-assistant.exe" (
-    echo   Debug:    %PROJECT_DIR%src-tauri\target\debug\codex-assistant.exe
+    echo   Debug:    src-tauri\target\debug\codex-assistant.exe
 )
-if exist "src-tauri\target\release\bundle\nsis" (
-    for %%f in ("src-tauri\target\release\bundle\nsis\*.exe") do echo   NSIS:     %PROJECT_DIR%%%f
+if exist "dist\codex-assistant-setup.exe" (
+    echo   NSIS:     dist\codex-assistant-setup.exe
 )
-if exist "src-tauri\target\release\bundle\msi" (
-    for %%f in ("src-tauri\target\release\bundle\msi\*.msi") do echo   MSI:      %PROJECT_DIR%%%f
+if exist "dist\codex-assistant.msi" (
+    echo   MSI:      dist\codex-assistant.msi
 )
 if exist "dist\codex-assistant-v%VERSION%-portable.zip" (
-    echo   Portable: %PROJECT_DIR%dist\codex-assistant-v%VERSION%-portable.zip
+    echo   Portable: dist\codex-assistant-v%VERSION%-portable.zip
 )
 echo ============================================================
 echo.

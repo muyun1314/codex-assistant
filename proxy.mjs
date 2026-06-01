@@ -239,6 +239,7 @@ const OPENAI_MODELS = parseCsv(process.env.OPENAI_MODELS || "");
 const OPENAI_MODEL_PREFIXES = parseCsv(process.env.OPENAI_MODEL_PREFIXES || "gpt-,o1,o3,o4,codex-,chatgpt-");
 
 const DEFAULT_PROVIDER = (process.env.DEFAULT_PROVIDER || "").trim().toLowerCase();
+const DEFAULT_MODEL = (process.env.DEFAULT_MODEL || "").trim();
 
 // Reasoning effort settings
 const DEEPSEEK_REASONING_EFFORT = process.env.DEEPSEEK_REASONING_EFFORT || "";
@@ -1854,7 +1855,18 @@ const server = http.createServer(async (req, res) => {
         const defaultProvider = getFallbackProvider();
         if (defaultProvider) {
           provider = defaultProvider;
-          log.info(`[Codex Assistant] Unknown model "${body.model}" → fallback to default provider "${provider}"`);
+          // Determine which model to use for the fallback provider
+          var fallbackModel = DEFAULT_MODEL;
+          if (!fallbackModel) {
+            // No DEFAULT_MODEL set — use the first available model from this provider
+            fallbackModel = (providerModels[defaultProvider] || [])[0] || body.model || '';
+          }
+          if (fallbackModel && body.model !== fallbackModel) {
+            log.info(`[Codex Assistant] Unknown model "${body.model}" → fallback to "${provider}" model "${fallbackModel}"`);
+            body.model = fallbackModel;
+          } else {
+            log.info(`[Codex Assistant] Unknown model "${body.model}" → fallback to default provider "${provider}"`);
+          }
         }
       }
 
@@ -1987,7 +1999,18 @@ const server = http.createServer(async (req, res) => {
         const defaultProvider = getFallbackProvider();
         if (defaultProvider) {
           provider = defaultProvider;
-          log.info(`[Codex Assistant] Unknown model "${body.model}" → fallback to default provider "${provider}"`);
+          // Determine which model to use for the fallback provider
+          var fallbackModel = DEFAULT_MODEL;
+          if (!fallbackModel) {
+            // No DEFAULT_MODEL set — use the first available model from this provider
+            fallbackModel = (providerModels[defaultProvider] || [])[0] || body.model || '';
+          }
+          if (fallbackModel && body.model !== fallbackModel) {
+            log.info(`[Codex Assistant] Unknown model "${body.model}" → fallback to "${provider}" model "${fallbackModel}"`);
+            body.model = fallbackModel;
+          } else {
+            log.info(`[Codex Assistant] Unknown model "${body.model}" → fallback to default provider "${provider}"`);
+          }
         }
       }
 

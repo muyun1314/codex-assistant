@@ -117,6 +117,23 @@ function escHtml(s) {
   return d.innerHTML;
 }
 
+function renderMarkdown(md) {
+  if (!md) return '';
+  return md
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    .replace(/\n/g, '<br>');
+}
+
+function openExternal(url) {
+  api('/api/open-url', 'POST', { url: url });
+}
+
 function escAttr(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -730,6 +747,21 @@ function closeProviderModal() {
   document.getElementById('provider-modal').classList.remove('show');
 }
 
+function onDefaultProviderChange() {
+  var providerName = document.getElementById('env-DEFAULT_PROVIDER').value;
+  var modelSelect = document.getElementById('env-DEFAULT_MODEL');
+  var opts = '<option value="">（跟随请求）</option>';
+  if (providerName) {
+    var p = providers.providers.find(function(x) { return x.name === providerName; });
+    if (p && p.models) {
+      opts += p.models.map(function(m) {
+        return '<option value="' + escAttr(m.id) + '">' + escHtml(m.display_name || m.id) + '</option>';
+      }).join('');
+    }
+  }
+  modelSelect.innerHTML = opts;
+}
+
 async function fetchModels() {
   var baseUrl = document.getElementById('pm-base').value.trim();
   var apiKey = document.getElementById('pm-key').value.trim();
@@ -872,14 +904,20 @@ async function exportConfig() {
     toast('没有可导出的配置，请先添加至少一个提供商', 'warning');
     return;
   }
-  if (!confirm('配置文件将以明文形式保存，包含您的 API Key 等敏感信息。\n请妥善保管，切勿分享给不可信的第三方。\n\n如怀疑有泄露风险，请在各提供商管理平台作废当前 API Key 并重新生成。\n\n确定导出？')) return;
+  if (!confirm('配置文件将以明文形式保存，包含您的 API Key 等敏感信息。\n请妥善保管，切勿分享给不可信的第三方。\n\n确定导出？')) return;
   var d = await api('/api/export-config');
-  var blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'codex-assistant-config-' + new Date().toISOString().slice(0, 10) + '.json';
-  a.click();
-  toast('配置已导出');
+  var defaultName = 'codex-assistant-config-' + new Date().toISOString().slice(0, 10) + '.json';
+  var result = await api('/api/save-file', 'POST', {
+    title: '导出配置',
+    content: JSON.stringify(d, null, 2),
+    defaultName: defaultName,
+    filter: 'JSON 文件 (*.json)|*.json'
+  });
+  if (result.success) {
+    toast('配置已保存到: ' + result.path);
+  } else if (result.message !== '未选择保存路径') {
+    toast('导出失败: ' + result.message, 'error');
+  }
 }
 
 function importConfig() {
@@ -910,7 +948,7 @@ var ENV_CONFIG = {
   basic: [
     { key: 'PROXY_PORT', label: '代理端口', type: 'number', placeholder: '4000', desc: '代理监听端口，Codex 需连接此端口' },
     { key: 'PROXY_AUTH_KEY', label: '访问密钥', type: 'text', placeholder: '留空则不限制访问', desc: '代理访问密钥，Codex 需填写相同密钥', hasRefresh: true, hasSync: true },
-    { key: 'DEFAULT_PROVIDER', label: '默认提供商', type: 'select', desc: '未指定模型时使用哪个提供商' }
+    { key: 'DEFAULT_PROVIDER', label: '默认提供商', type: 'select-provider', desc: '未指定模型时使用哪个提供商和模型' }
   ],
   advanced: [
     { key: 'UPSTREAM_TIMEOUT_MS', label: '上游超时 (ms)', type: 'number', placeholder: '120000', desc: '上游请求超时时间' },
@@ -980,12 +1018,25 @@ async function loadEnv() {
       html += '<div style="margin-bottom:var(--space-4);">';
       html += '<label>' + item.label + ' <code style="font-size:10px;font-weight:400;color:var(--text-muted);">' + envKey + '</code></label>';
 
-      if (item.type === 'select' && envKey === 'DEFAULT_PROVIDER') {
-        var opts = '<option value="">（未设置）</option>';
-        opts += providers.providers.map(function (p) {
+      if (item.type === 'select-provider') {
+        var providerOpts = '<option value="">（未设置）</option>';
+        providerOpts += providers.providers.map(function (p) {
           return '<option value="' + escAttr(p.name) + '"' + (p.name === currentDefaultProvider ? ' selected' : '') + '>' + escHtml(p.name) + '</option>';
         }).join('');
-        html += '<select id="env-' + envKey + '">' + opts + '</select>';
+        var savedModel = d['DEFAULT_MODEL'] || '';
+        var modelOpts = '<option value="">（跟随请求）</option>';
+        if (currentDefaultProvider) {
+          var cp = providers.providers.find(function(p) { return p.name === currentDefaultProvider; });
+          if (cp && cp.models) {
+            modelOpts += cp.models.map(function(m) {
+              return '<option value="' + escAttr(m.id) + '"' + (m.id === savedModel ? ' selected' : '') + '>' + escHtml(m.display_name || m.id) + '</option>';
+            }).join('');
+          }
+        }
+        html += '<div style="display:flex;gap:var(--space-3);">';
+        html += '<select id="env-DEFAULT_PROVIDER" onchange="onDefaultProviderChange()" style="flex:1;">' + providerOpts + '</select>';
+        html += '<select id="env-DEFAULT_MODEL" style="flex:1;">' + modelOpts + '</select>';
+        html += '</div>';
       } else if (item.hasRefresh) {
         html += '<div style="display:flex;gap:var(--space-2);"><input id="env-' + envKey + '" value="' + escAttr(val) + '" type="' + item.type + '" placeholder="' + (item.placeholder || '') + '" style="flex:1;margin-bottom:0;"><button class="btn btn-secondary" onclick="refreshAuthKey()" style="white-space:nowrap;">随机刷新</button></div>';
         if (item.hasSync) {
@@ -1041,6 +1092,10 @@ async function saveEnv() {
     d.CODEX_API_KEY = d.PROXY_AUTH_KEY;
   }
 
+  // Also save DEFAULT_MODEL (not in ENV_CONFIG, rendered separately)
+  var modelEl = document.getElementById('env-DEFAULT_MODEL');
+  if (modelEl && modelEl.value) d['DEFAULT_MODEL'] = modelEl.value;
+
   await api('/api/env', 'PUT', d);
   currentDefaultProvider = d['DEFAULT_PROVIDER'] || '';
   await loadProviders();
@@ -1049,7 +1104,12 @@ async function saveEnv() {
 
 async function saveEnvAndRestart() {
   await saveEnv();
-  await restartProxy();
+  var status = await api('/api/status');
+  if (status.proxy_running || status.proxy_port_alive) {
+    await restartProxy();
+  } else {
+    toast('环境配置已保存，代理未运行，无需重启');
+  }
   showPage('dashboard');
   var firstNav = document.querySelector('.nav-item');
   if (firstNav) firstNav.classList.add('active');
@@ -1078,7 +1138,12 @@ async function saveLogConfig() {
 
 async function saveLogConfigAndRestart() {
   await saveLogConfig();
-  await restartProxy();
+  var status = await api('/api/status');
+  if (status.proxy_running || status.proxy_port_alive) {
+    await restartProxy();
+  } else {
+    toast('日志配置已保存，代理未运行，无需重启');
+  }
   showPage('dashboard');
   var firstNav = document.querySelector('.nav-item');
   if (firstNav) firstNav.classList.add('active');
@@ -1112,14 +1177,20 @@ async function loadLogs() {
   } catch (e) { /* transient failure, will retry */ }
 }
 
-function exportLogs() {
+async function exportLogs() {
   var text = document.getElementById('log-box').textContent;
-  var blob = new Blob([text], { type: 'text/plain' });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'codex-assistant-log-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.txt';
-  a.click();
-  toast('日志已导出');
+  var defaultName = 'codex-assistant-log-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.txt';
+  var result = await api('/api/save-file', 'POST', {
+    title: '导出日志',
+    content: text,
+    defaultName: defaultName,
+    filter: '文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*'
+  });
+  if (result.success) {
+    toast('日志已保存到: ' + result.path);
+  } else if (result.message !== '未选择保存路径') {
+    toast('导出失败: ' + result.message, 'error');
+  }
 }
 
 // ==================== Update Functions ====================
@@ -1160,7 +1231,7 @@ async function checkForUpdates() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path><polyline points="21 3 21 9 15 9"></polyline></svg>';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path><polyline points="21 3 21 9 15 9"></polyline></svg> 检查版本更新';
     }
   }
 }
@@ -1189,13 +1260,13 @@ function showUpdateModal(updateInfo) {
       '</div>' +
     '</div>' +
     '<div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--space-2);">更新日志</div>' +
-    '<div class="update-changelog">' + escHtml(updateInfo.changelog) + '</div>' +
+    '<div class="update-changelog">' + renderMarkdown(updateInfo.changelog) + '</div>' +
     '<div class="update-progress" id="update-progress" style="display:none;">' +
       '<div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--space-1);">正在下载更新...</div>' +
       '<div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>' +
     '</div>' +
     '<div class="update-actions">' +
-      '<a href="' + escAttr(updateInfo.releaseUrl) + '" target="_blank" class="btn btn-ghost">查看发布页</a>' +
+      '<a href="javascript:void(0)" onclick="openExternal(\'' + escAttr(updateInfo.releaseUrl) + '\')" class="btn btn-ghost">查看发布页</a>' +
       '<button class="btn btn-secondary" onclick="closeUpdateModal()">稍后更新</button>' +
       '<button class="btn btn-primary" id="btn-apply-update" onclick="applyUpdate()">立即更新</button>' +
     '</div>' +

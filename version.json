@@ -1,7 +1,7 @@
-﻿{
-  "version": "1.2.0",
-  "build": 2,
+{
+  "version": "1.2.1",
+  "build": 1,
   "releasedAt": "2026-05-31",
-  "changelog": "Tauri native window, built-in Node.js, one-click build, portable version"
+  "changelog": "修复版本号显示、隐藏CMD窗口、统一构建输出目录、修复导出配置和更新检查"
 }
 
