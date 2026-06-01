@@ -89,13 +89,22 @@ fn restart_node(app: AppHandle, state: tauri::State<NodeProcess>) -> Result<(), 
 fn resolve_resource_dir(app: &AppHandle) -> std::path::PathBuf {
     let resource_dir = app.path().resource_dir()
         .expect("Cannot resolve resource directory");
+    // Check direct path first (dev mode / portable)
     if resource_dir.join("ui-server.mjs").exists() {
-        resource_dir
-    } else {
-        // Dev mode: resource_dir is target/debug/, fall back to project root
-        std::env::current_dir().expect("Cannot get current directory")
-            .parent().expect("Cannot get project root").to_path_buf()
+        return resource_dir;
     }
+    // Check resources/ subdirectory (installed version)
+    let sub = resource_dir.join("resources");
+    if sub.join("ui-server.mjs").exists() {
+        return sub;
+    }
+    // Dev mode: resource_dir is target/debug/, fall back to project root
+    let cwd = std::env::current_dir().expect("Cannot get current directory");
+    let project_root = cwd.parent().expect("Cannot get project root").to_path_buf();
+    if project_root.join("ui-server.mjs").exists() {
+        return project_root;
+    }
+    resource_dir
 }
 
 /// Spawn the Node.js ui-server process.
