@@ -130,10 +130,15 @@ copy /y "README.md"                 "%PORTABLE_DIR%\" >nul
 copy /y "README.zh-CN.md"          "%PORTABLE_DIR%\" >nul
 
 echo   [7/7] Creating launcher...
-> "%PORTABLE_DIR%\Start.cmd" (
+> "%PORTABLE_DIR%\启动.cmd" (
     echo @echo off
     echo cd /d "%%~dp0"
-    echo start "" /min "codex-assistant.exe"
+    echo wscript //nologo "启动.vbs"
+)
+> "%PORTABLE_DIR%\启动.vbs" (
+    echo Set ws = CreateObject^("WScript.Shell"^)
+    echo ws.CurrentDirectory = CreateObject^("Scripting.FileSystemObject"^).GetParentFolderName^(WScript.ScriptFullName^)
+    echo ws.Run "codex-assistant.exe", 0, False
 )
 > "%PORTABLE_DIR%\README-PORTABLE.txt" (
     echo Codex Assistant v%VERSION% Portable
