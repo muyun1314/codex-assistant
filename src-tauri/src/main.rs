@@ -119,12 +119,19 @@ fn spawn_node(resource_dir: &Path) -> Result<Child, String> {
 
     // Use Stdio::null() to avoid pipe buffer deadlock.
     // Node.js writes logs to files via ui-server.mjs, so console output is not needed.
-    let child = Command::new(node_cmd)
-        .arg(&ui_server_path)
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let mut cmd = Command::new(node_cmd);
+    cmd.arg(&ui_server_path)
         .current_dir(resource_dir)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let child = cmd.spawn()
         .map_err(|e| format!("Failed to start Node.js: {}", e))?;
 
     Ok(child)
