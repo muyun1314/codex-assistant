@@ -2,6 +2,7 @@ import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { spawn, exec, execFile, execSync, execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -1716,7 +1717,7 @@ type = "openai-compatible"
   });
   server.listen(port, '127.0.0.1', function () {
     UI_PORT = port;
-    try { fs.writeFileSync(path.join(PROJECT_DIR, '.ui-port'), String(UI_PORT)); } catch (e) {}
+    try { fs.writeFileSync(path.join(os.tmpdir(), '.codex-assistant-ui-port'), String(UI_PORT)); } catch (e) {}
     console.log('[ui] Server listening on http://127.0.0.1:' + UI_PORT);
     console.log('[ui] Press Ctrl+C to stop');
   });

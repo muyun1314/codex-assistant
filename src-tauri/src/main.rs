@@ -18,6 +18,11 @@ fn try_read_port(port_file: &Path) -> Option<u16> {
         .and_then(|s| s.trim().parse::<u16>().ok())
 }
 
+/// Get the temp port file path (ui-server writes here to avoid polluting install dir).
+fn temp_port_file() -> std::path::PathBuf {
+    std::env::temp_dir().join(".codex-assistant-ui-port")
+}
+
 /// Kill a process tree on Windows (the node process + all children).
 fn kill_process_tree(child: &mut Child) {
     let pid = child.id();
@@ -65,7 +70,7 @@ fn restart_node(app: AppHandle, state: tauri::State<NodeProcess>) -> Result<(), 
     }
 
     let resource_dir = resolve_resource_dir(&app);
-    let port_file = resource_dir.join(".ui-port");
+    let port_file = temp_port_file();
     let _ = fs::remove_file(&port_file);
 
     let child = spawn_node(&resource_dir)?;
@@ -153,7 +158,7 @@ fn main() {
         .setup(|app| {
             let resource_dir = resolve_resource_dir(app.handle());
 
-            let port_file = resource_dir.join(".ui-port");
+            let port_file = temp_port_file();
             let _ = fs::remove_file(&port_file);
 
             let child = spawn_node(&resource_dir)?;
