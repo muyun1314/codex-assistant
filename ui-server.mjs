@@ -17,7 +17,13 @@ import {
 
 var UI_PORT = parseInt(process.env.UI_PORT, 10) || 8788;
 var PROJECT_DIR = path.dirname(fileURLToPath(import.meta.url));
-var USER_DIR = path.join(PROJECT_DIR, 'user');
+
+// Detect installed vs portable: installed version has resources/ subdirectory
+var IS_INSTALLED = fs.existsSync(path.join(PROJECT_DIR, 'resources'));
+var APP_DATA_BASE = IS_INSTALLED
+  ? (process.env.APPDATA || process.env.USERPROFILE || PROJECT_DIR)
+  : PROJECT_DIR;
+var USER_DIR = path.join(APP_DATA_BASE, IS_INSTALLED ? 'CodexAssistant' : '', 'user');
 var CODEXPP_CONFIG_FILE = path.join(USER_DIR, 'codexpp-config.json');
 var CODEX_CONFIG_DIR = path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex');
 
@@ -492,9 +498,10 @@ async function startProxy() {
   
   // 收集 stderr 输出用于诊断
   var stderrChunks = [];
-  proxyProcess = spawn('node', ['--env-file=user/.env', proxyPath], {
+  var envFilePath = path.join(USER_DIR, '.env');
+  proxyProcess = spawn('node', ['--env-file=' + envFilePath, proxyPath], {
     cwd: PROJECT_DIR,
-    env: Object.assign({}, process.env, env),
+    env: Object.assign({}, process.env, env, { CODASS_LOG_DIR: path.join(APP_DATA_BASE, IS_INSTALLED ? 'CodexAssistant' : '', 'log') }),
     detached: false,
   });
   proxyProcess.stdout.on('data', function(d) {

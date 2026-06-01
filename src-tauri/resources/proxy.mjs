@@ -73,7 +73,7 @@ var log = {
 // Use import.meta.url to get the reliable directory of proxy.mjs itself,
 // independent of process.cwd() which depends on how the process was spawned.
 var _proxyDir = path.dirname(fileURLToPath(import.meta.url));
-var LOG_DIR = path.resolve(_proxyDir, "log");
+var LOG_DIR = process.env.CODASS_LOG_DIR || path.resolve(_proxyDir, "log");
 var LOG_RETENTION_DAYS = Math.min(30, Math.max(1, parseInt(process.env.LOG_RETENTION_DAYS || "3", 10) || 3));
 var _logStream = null;
 var _logFile = null;
