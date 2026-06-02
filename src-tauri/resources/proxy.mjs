@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { tryDecryptApiKey } from "./src/crypto-store.mjs";
 import { parseCsv, normalizeModelId, contentHasUrl, sendJson, fetchWithTimeout, readJsonBody, sendUpstreamError } from "./src/shared.mjs";
-import { uid, applyEffortTranslation, normalizeMessages } from "./src/protocol.mjs";
+import { uid, applyEffortTranslation, normalizeMessages, KNOWN_CONTEXT_WINDOWS, AVG_TOKENS_PER_MESSAGE, DEFAULT_CONTEXT_WINDOW, getModelContextWindow, calcMaxMessages } from "./src/protocol.mjs";
 import {
   jinaRead, rawFetch, executeWebFetch, ensureWebFetchTool,
   ensureWebFetchHint, runWebFetchLoop, WEB_FETCH_TOOL
@@ -433,27 +433,8 @@ function loadDynamicProviders() {
 }
 
 // ---- Model context window sizes (tokens) ----
-// Dynamically populated from provider-configs.json; known models get defaults.
+// Dynamically populated from provider-configs.json; known models get defaults from protocol.mjs.
 const MODEL_CONTEXT_WINDOWS = new Map();
-
-// Known model context window defaults (tokens)
-const KNOWN_CONTEXT_WINDOWS = {
-  // MiMo (Xiaomi)
-  'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576,
-  // DeepSeek
-  'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072,
-  'deepseek-v3': 131072, 'deepseek-chat': 131072,
-  // OpenAI
-  'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'gpt-4-turbo': 128000,
-  'gpt-4': 8192, 'gpt-3.5-turbo': 16385,
-  'o1': 200000, 'o1-mini': 128000, 'o3-mini': 200000,
-  // Claude
-  'claude-sonnet-4-20250514': 200000, 'claude-3-5-sonnet': 200000,
-  'claude-3-haiku': 200000,
-};
-
-// 每条消息平均 token 估算（用于从上下文窗口计算最大消息数）
-const AVG_TOKENS_PER_MESSAGE = 800;
 
 // 合并静态和动态提供商
 function buildProviders() {
@@ -995,10 +976,8 @@ function responsesRequestToChatCompletions(body, provider) {
   }
 
   // Dynamically calculate MAX_MESSAGES based on the model's context window
-  // Reserve ~20% for output tokens
-  const contextWindow = MODEL_CONTEXT_WINDOWS.get(body.model) || 131072;
-  const inputBudget = Math.floor(contextWindow * 0.8);
-  const MAX_MESSAGES = Math.max(20, Math.min(200, Math.floor(inputBudget / AVG_TOKENS_PER_MESSAGE)));
+  const contextWindow = getModelContextWindow(body.model, MODEL_CONTEXT_WINDOWS);
+  const MAX_MESSAGES = calcMaxMessages(contextWindow);
   log.info(`[proxy] model="${body.model}" context_window=${contextWindow} tokens, max_messages=${MAX_MESSAGES}`);
   let finalMessages = merged;
   if (merged.length > MAX_MESSAGES) {
@@ -1029,7 +1008,7 @@ function responsesRequestToChatCompletions(body, provider) {
 
   if (body.temperature != null) req.temperature = body.temperature;
   if (body.top_p != null) req.top_p = body.top_p;
-  req.max_tokens = body.max_output_tokens || 16384;
+  req.max_tokens = body.max_output_tokens || 4096;
 
   if (body.tools?.length > 0) {
     const supported = body.tools.filter((t) => t.type === "function");
@@ -1579,7 +1558,7 @@ async function handleOaiCompatChatCompletions(req, provider, body, res) {
 
   const validated = normalizeMessages(body.messages || [], { coerceStrings: true });
   body.messages = validated;
-  if (!body.max_tokens) body.max_tokens = 16384;
+  if (!body.max_tokens) body.max_tokens = 4096;
 
   // Translate effort hints on the chat/completions path too. Either:
   //   - body.reasoning_effort (Chat Completions native field)

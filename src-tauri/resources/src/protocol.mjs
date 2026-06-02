@@ -3,6 +3,32 @@
 
 import crypto from "node:crypto";
 
+// ---- Known model context windows (tokens) ----
+// Shared between proxy.mjs and this module.
+export const KNOWN_CONTEXT_WINDOWS = {
+  'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576,
+  'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072,
+  'deepseek-v3': 131072, 'deepseek-chat': 131072,
+  'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'gpt-4-turbo': 128000,
+  'gpt-4': 8192, 'gpt-3.5-turbo': 16385,
+  'o1': 200000, 'o1-mini': 128000, 'o3-mini': 200000,
+  'claude-sonnet-4-20250514': 200000, 'claude-3-5-sonnet': 200000,
+  'claude-3-haiku': 200000,
+};
+
+export const AVG_TOKENS_PER_MESSAGE = 800;
+export const DEFAULT_CONTEXT_WINDOW = 131072;
+
+export function getModelContextWindow(model, customMap) {
+  if (customMap && customMap.has(model)) return customMap.get(model);
+  return KNOWN_CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
+}
+
+export function calcMaxMessages(contextWindow) {
+  const inputBudget = Math.floor(contextWindow * 0.8);
+  return Math.max(20, Math.min(200, Math.floor(inputBudget / AVG_TOKENS_PER_MESSAGE)));
+}
+
 // ---- ID generation ----
 export function uid() {
   return crypto.randomBytes(12).toString("base64url");
@@ -241,10 +267,8 @@ export function responsesRequestToChatCompletions(body, provider, reasoningByCal
   }
 
   // Message cap — dynamic based on model context window
-  const AVG_TOKENS_PER_MSG = 800;
-  const KNOWN_WINDOWS = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
-  const ctx = KNOWN_WINDOWS[body?.model] || 131072;
-  const MAX_MESSAGES = Math.max(20, Math.min(200, Math.floor(ctx * 0.8 / AVG_TOKENS_PER_MSG)));
+  const ctx = getModelContextWindow(body?.model);
+  const MAX_MESSAGES = calcMaxMessages(ctx);
   let finalMessages = merged;
   if (merged.length > MAX_MESSAGES) {
     const head = merged.slice(0, 2);

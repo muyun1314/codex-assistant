@@ -826,18 +826,27 @@ async function fetchModels() {
 
     var listEl = document.getElementById('pm-model-list');
     var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
+    var unknownCount = 0;
     listEl.innerHTML = models.map(function (m) {
+      var isKnown = KNOWN_CTX.hasOwnProperty(m.id);
       var ctx = KNOWN_CTX[m.id] || 131072;
-      return '<label class="checkbox-item" style="align-items:center;">' +
+      if (!isKnown) unknownCount++;
+      var warnStyle = isKnown ? '' : 'border-color:var(--warning);';
+      var warnTitle = isKnown ? '上下文窗口 (tokens)' : '上下文窗口 (tokens) — 未知模型，请根据模型文档填写';
+      return '<label class="checkbox-item" style="align-items:center;' + warnStyle + '">' +
         '<input type="checkbox" value="' + escAttr(m.id) + '" data-name="' + escAttr(m.display_name || m.id) + '" checked>' +
-        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + '</span>' +
-        '<input type="number" class="model-ctx-input" data-model="' + escAttr(m.id) + '" value="' + ctx + '" title="上下文窗口 (tokens)" style="width:90px;font-size:11px;padding:2px 6px;margin:0;flex:none;">' +
+        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + (isKnown ? '' : ' <span style="color:var(--warning);font-size:10px;">需确认上下文</span>') + '</span>' +
+        '<input type="number" class="model-ctx-input" data-model="' + escAttr(m.id) + '" value="' + ctx + '" title="' + escAttr(warnTitle) + '" style="width:90px;font-size:11px;padding:2px 6px;margin:0;flex:none;">' +
         '<span style="color:var(--text-muted);font-size:10px;flex:none;">tokens</span>' +
       '</label>';
     }).join('');
     listEl.style.display = 'block';
     document.getElementById('pm-model-hint').style.display = 'block';
-    document.getElementById('pm-fetch-status').textContent = '获取到 ' + models.length + ' 个模型，勾选后保存';
+    var statusText = '获取到 ' + models.length + ' 个模型，勾选后保存';
+    if (unknownCount > 0) {
+      statusText += '。' + unknownCount + ' 个未知模型的上下文窗口已设为默认值 128K，请根据模型文档确认并修改';
+    }
+    document.getElementById('pm-fetch-status').textContent = statusText;
     document.getElementById('pm-fetch-status').className = 'fetch-status ok';
   } catch (e) {
     btn.disabled = false;
