@@ -855,9 +855,10 @@ async function fetchModels() {
       var opts = CTX_OPTIONS.map(function (o) {
         return '<option value="' + o.value + '"' + (o.value === ctxVal ? ' selected' : '') + '>' + o.label + '</option>';
       }).join('');
-      return '<label class="checkbox-item" style="align-items:center;">' +
+      var warnStyle = isKnown ? '' : 'border-color:var(--warning);';
+      return '<label class="checkbox-item" style="align-items:center;' + warnStyle + '">' +
         '<input type="checkbox" value="' + escAttr(m.id) + '" data-name="' + escAttr(m.display_name || m.id) + '" checked>' +
-        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + '</span>' +
+        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + (isKnown ? '' : ' <span style="color:var(--warning);font-size:10px;">需确认上下文</span>') + '</span>' +
         '<select class="model-ctx-input" data-model="' + escAttr(m.id) + '" style="width:72px;font-size:11px;padding:2px 4px;margin:0;flex:none;">' + opts + '</select>' +
       '</label>';
     }).join('');
