@@ -1,7 +1,7 @@
 {
-  "version": "1.2.1",
+  "version": "1.2.2",
   "build": 1,
-  "releasedAt": "2026-05-31",
-  "changelog": "修复版本号显示、隐藏CMD窗口、统一构建输出目录、修复导出配置和更新检查"
+  "releasedAt": "2026-06-02",
+  "changelog": "模型上下文窗口自适应、Codex CLI检测修复、UI交互优化"
 }
 
