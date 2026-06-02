@@ -902,9 +902,18 @@ function getCodexPlusPlusManagerPath() {
 
 function checkCodexInstalled() {
   const codexInfo = getCodexInstallInfo();
+  // Desktop: store version or exe in known paths
+  const hasDesktop = codexInfo.type === 'store' || (codexInfo.type === 'exe' && codexInfo.path);
+  // CLI: must be in PATH (not just a desktop exe)
+  let hasCli = false;
+  try {
+    execFileSync('where', ['codex'], { encoding: 'utf8', timeout: 3000 });
+    hasCli = true;
+  } catch {}
   return {
-    codex: codexInfo.type !== 'path' || codexInfo.path !== 'codex',
-    codexType: codexInfo.type, // 'store' 或 'exe'
+    codexCli: hasCli,
+    codexDesktop: hasDesktop,
+    codexType: codexInfo.type,
     codexPlusPlus: getCodexPlusPlusPath() !== null,
     codexPlusPlusManager: getCodexPlusPlusManagerPath() !== null,
   };

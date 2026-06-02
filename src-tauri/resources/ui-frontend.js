@@ -501,28 +501,25 @@ async function stopCodex() {
 async function checkCodexInstalled() {
   try {
     var result = await api('/api/codex/check-installed');
-    var btnMap = {
-      'cli': 'btn-codex-cli',
-      'app': 'btn-codex-app',
-      'codexpp': 'btn-codexpp',
-      'codexpp-manager': 'btn-codexpp-manager'
-    };
-    Object.keys(btnMap).forEach(function (m) {
-      var btn = document.getElementById(btnMap[m]);
-      if (!btn) return;
-
-      var installed = false;
-      if (m === 'cli' || m === 'app') installed = result.codex;
-      else if (m === 'codexpp') installed = result.codexPlusPlus;
-      else if (m === 'codexpp-manager') installed = result.codexPlusPlusManager;
-
-      btn.disabled = !installed;
-      if (m === 'app' && result.codex) {
-        var codexType = result.codexType || 'exe';
-        btn.textContent = '启动 Codex 桌面版' + (codexType === 'store' ? ' (商店)' : '');
-        btn.title = result.codex ? '启动 Codex 桌面版' : '未安装 Codex';
-      }
-    });
+    // CLI button: only enabled if codex CLI is in PATH
+    var cliBtn = document.getElementById('btn-codex-cli');
+    if (cliBtn) {
+      cliBtn.disabled = !result.codexCli;
+      cliBtn.title = result.codexCli ? '启动 Codex CLI' : '未安装 Codex CLI（仅安装了桌面版）';
+    }
+    // Desktop button: enabled if store or exe version found
+    var appBtn = document.getElementById('btn-codex-app');
+    if (appBtn) {
+      appBtn.disabled = !result.codexDesktop;
+      var codexType = result.codexType || 'exe';
+      appBtn.textContent = '启动 Codex 桌面版' + (codexType === 'store' ? ' (商店)' : '');
+      appBtn.title = result.codexDesktop ? '启动 Codex 桌面版' : '未安装 Codex';
+    }
+    // Codex++ buttons
+    var cppBtn = document.getElementById('btn-codexpp');
+    if (cppBtn) cppBtn.disabled = !result.codexPlusPlus;
+    var mgrBtn = document.getElementById('btn-codexpp-manager');
+    if (mgrBtn) mgrBtn.disabled = !result.codexPlusPlusManager;
   } catch (e) {
     console.error('Failed to check Codex installed:', e);
   }
