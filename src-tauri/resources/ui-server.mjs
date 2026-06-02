@@ -912,12 +912,19 @@ function checkCodexInstalled() {
 
 function startCodexCli() {
   try {
+    const codexInfo = getCodexInstallInfo();
+    if (codexInfo.type === 'path' && codexInfo.path === 'codex') {
+      // Fallback to PATH — verify codex actually exists
+      try {
+        execFileSync('where', ['codex'], { encoding: 'utf8', timeout: 3000 });
+      } catch {
+        return { success: false, message: '未找到 Codex CLI，请先安装 Codex（微软商店或官网下载）' };
+      }
+    }
     trustCodexDirectory(PROJECT_DIR);
-    const codexPath = getCodexPath();
+    const codexPath = codexInfo.path || 'codex';
     const cmd = `start "Codex CLI" cmd /k "\"${codexPath}\" -C \"${PROJECT_DIR}\""`;
     console.log('[codex] Starting CLI:', cmd);
-    console.log('[codex] Codex path:', codexPath);
-    console.log('[codex] Codex exists:', fs.existsSync(codexPath));
     exec(cmd, { shell: true }, (err, stdout, stderr) => {
       if (err) console.error('[codex] CLI error:', err.message);
       if (stderr) console.error('[codex] CLI stderr:', stderr);
@@ -930,8 +937,15 @@ function startCodexCli() {
 
 function startCodexApp() {
   try {
-    trustCodexDirectory(PROJECT_DIR);
     const installInfo = getCodexInstallInfo();
+    if (installInfo.type === 'path' && installInfo.path === 'codex') {
+      try {
+        execFileSync('where', ['codex'], { encoding: 'utf8', timeout: 3000 });
+      } catch {
+        return { success: false, message: '未找到 Codex，请先安装 Codex（微软商店或官网下载）' };
+      }
+    }
+    trustCodexDirectory(PROJECT_DIR);
     let cmd;
     
     if (installInfo.type === 'store') {
