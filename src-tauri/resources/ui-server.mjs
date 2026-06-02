@@ -1262,14 +1262,19 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/codex-config' && method === 'POST') {
     try {
       const body = await collectBody(req);
-      const { model, port } = JSON.parse(body);
+      const { model, port, context_window } = JSON.parse(body);
       const env = readEnv();
       const actualPort = port || env.PROXY_PORT || '4000';
+      const ctxWindow = context_window || 131072;
       const config =
 `# Codex 配置 - 由 Codex Assistant UI 自动生成
 model = "${model}"
 model_reasoning_effort = "medium"
 model_provider = "local_proxy"
+model_context_window = ${ctxWindow}
+max_tokens = 4096
+enable_request_compression = false
+allow_model_truncation = false
 
 [model_providers.local_proxy]
 name = "${model}"

@@ -636,7 +636,20 @@ async function quickApply() {
     auxProvider: auxProvider || null
   });
 
-  await api('/api/codex-config', 'POST', { model: actualModel, port: port });
+  // Get context_window for the selected model
+  var ctxWindow = 131072;
+  var allProviders = providers.providers || [];
+  for (var pi = 0; pi < allProviders.length; pi++) {
+    var pm = allProviders[pi].models || [];
+    for (var mi = 0; mi < pm.length; mi++) {
+      if (pm[mi].id === actualModel || pm[mi].slug === actualModel) {
+        ctxWindow = pm[mi].context_window || 131072;
+        break;
+      }
+    }
+  }
+
+  await api('/api/codex-config', 'POST', { model: actualModel, port: port, context_window: ctxWindow });
   currentAppliedModel = actualModel;
   currentAuxModel = actualAuxModel || actualModel;
 
