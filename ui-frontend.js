@@ -462,6 +462,12 @@ async function restartProxy() {
 }
 
 async function startCodex(mode) {
+  // Must have a model configured before starting proxy
+  if (!currentAppliedModel) {
+    toast('请先在"快速配置 Codex"中选择模型并点击"应用配置到 Codex"，然后再启动', 'warning');
+    return;
+  }
+
   var status = await api('/api/status');
   if (!status.proxy_running) {
     toast('代理未运行，正在启动代理...');
