@@ -709,8 +709,12 @@ function renderProviders() {
       '</div>' +
       '<div class="model-tags">' +
         (p.models || []).map(function (m) {
-          return '<span class="model-tag">' + escHtml(m.display_name || m.id) +
-            '<span class="remove" onclick="event.stopPropagation();removeModel(' + i + ',\'' + escAttr(m.slug || m.id) + '\')">&times;</span></span>';
+          var ctx = m.context_window;
+          var ctxLabel = ctx ? (ctx >= 1000000 ? (ctx / 1000000) + 'M' : (ctx / 1000) + 'K') : '';
+          return '<div class="model-tag-wrapper"><span class="model-tag">' + escHtml(m.display_name || m.id) +
+            '<span class="remove" onclick="event.stopPropagation();removeModel(' + i + ',\'' + escAttr(m.slug || m.id) + '\')">&times;</span></span>' +
+            (ctxLabel ? '<span class="model-context-hint">' + ctxLabel + ' 上下文</span>' : '') +
+            '</div>';
         }).join('') +
       '</div>' +
     '</div>';
@@ -734,6 +738,22 @@ function showProviderModal(idx) {
     document.getElementById('pm-base').value = p.base_url || '';
     document.getElementById('pm-key').value = p.api_key || '';
     document.getElementById('pm-protocol').value = p.protocol || 'openai';
+    // Show saved models with context_window
+    if (p.models && p.models.length > 0) {
+      var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
+      var listEl = document.getElementById('pm-model-list');
+      listEl.innerHTML = p.models.map(function (m) {
+        var ctx = m.context_window || KNOWN_CTX[m.id] || 131072;
+        return '<label class="checkbox-item" style="align-items:center;">' +
+          '<input type="checkbox" value="' + escAttr(m.id) + '" data-name="' + escAttr(m.display_name || m.id) + '" checked>' +
+          '<span style="flex:1;">' + escHtml(m.display_name || m.id) + '</span>' +
+          '<input type="number" class="model-ctx-input" data-model="' + escAttr(m.id) + '" value="' + ctx + '" title="上下文窗口 (tokens)" style="width:90px;font-size:11px;padding:2px 6px;margin:0;flex:none;">' +
+          '<span style="color:var(--text-muted);font-size:10px;flex:none;">tokens</span>' +
+        '</label>';
+      }).join('');
+      listEl.style.display = 'block';
+      document.getElementById('pm-model-hint').style.display = 'block';
+    }
   } else {
     document.getElementById('pm-name').value = '';
     document.getElementById('pm-base').value = '';
@@ -792,11 +812,14 @@ async function fetchModels() {
     }
 
     var listEl = document.getElementById('pm-model-list');
+    var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
     listEl.innerHTML = models.map(function (m) {
-      return '<label class="checkbox-item">' +
+      var ctx = KNOWN_CTX[m.id] || 131072;
+      return '<label class="checkbox-item" style="align-items:center;">' +
         '<input type="checkbox" value="' + escAttr(m.id) + '" data-name="' + escAttr(m.display_name || m.id) + '" checked>' +
-        '<span>' + escHtml(m.display_name || m.id) + '</span>' +
-        '<span style="color:var(--text-muted);font-size:11px;margin-left:auto;">' + escHtml(m.id) + '</span>' +
+        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + '</span>' +
+        '<input type="number" class="model-ctx-input" data-model="' + escAttr(m.id) + '" value="' + ctx + '" title="上下文窗口 (tokens)" style="width:90px;font-size:11px;padding:2px 6px;margin:0;flex:none;">' +
+        '<span style="color:var(--text-muted);font-size:10px;flex:none;">tokens</span>' +
       '</label>';
     }).join('');
     listEl.style.display = 'block';
@@ -824,7 +847,9 @@ async function saveProvider() {
   var listEl = document.getElementById('pm-model-list');
   if (listEl.style.display !== 'none') {
     listEl.querySelectorAll('input[type="checkbox"]:checked').forEach(function (cb) {
-      models.push({ id: cb.value, display_name: cb.dataset.name, slug: cb.value, priority: 0 });
+      var ctxInput = listEl.querySelector('.model-ctx-input[data-model="' + cb.value + '"]');
+      var ctxVal = ctxInput ? parseInt(ctxInput.value) || 131072 : 131072;
+      models.push({ id: cb.value, display_name: cb.dataset.name, slug: cb.value, priority: 0, context_window: ctxVal });
     });
   }
   if (idx >= 0 && models.length === 0 && providers.providers[idx]) {

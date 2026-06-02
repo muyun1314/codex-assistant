@@ -388,11 +388,17 @@ function loadDynamicProviders() {
       var name = p.name.toLowerCase().replace(/\s+/g, '');
       providerNames.push(name);
       
-      // 从模型列表中提取模型 ID
+      // 从模型列表中提取模型 ID 和上下文窗口大小
       var models = [];
       for (var j = 0; j < (p.models || []).length; j++) {
         var slug = p.models[j].slug || p.models[j].id;
-        if (slug) models.push(slug);
+        if (slug) {
+          models.push(slug);
+          // 存储每个模型的上下文窗口大小
+          if (p.models[j].context_window) {
+            MODEL_CONTEXT_WINDOWS.set(slug, p.models[j].context_window);
+          }
+        }
       }
       
       if (models.length === 0) continue;
@@ -426,6 +432,29 @@ function loadDynamicProviders() {
   }
 }
 
+// ---- Model context window sizes (tokens) ----
+// Dynamically populated from provider-configs.json; known models get defaults.
+const MODEL_CONTEXT_WINDOWS = new Map();
+
+// Known model context window defaults (tokens)
+const KNOWN_CONTEXT_WINDOWS = {
+  // MiMo (Xiaomi)
+  'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576,
+  // DeepSeek
+  'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072,
+  'deepseek-v3': 131072, 'deepseek-chat': 131072,
+  // OpenAI
+  'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'gpt-4-turbo': 128000,
+  'gpt-4': 8192, 'gpt-3.5-turbo': 16385,
+  'o1': 200000, 'o1-mini': 128000, 'o3-mini': 200000,
+  // Claude
+  'claude-sonnet-4-20250514': 200000, 'claude-3-5-sonnet': 200000,
+  'claude-3-haiku': 200000,
+};
+
+// 每条消息平均 token 估算（用于从上下文窗口计算最大消息数）
+const AVG_TOKENS_PER_MESSAGE = 800;
+
 // 合并静态和动态提供商
 function buildProviders() {
   // 静态 provider 仅作为 .env 配置的回退，且只有配置了 key 的才会加入
@@ -452,6 +481,13 @@ function buildProviders() {
 }
 
 const OAI_COMPAT_PROVIDERS = buildProviders();
+
+// Populate MODEL_CONTEXT_WINDOWS with known defaults for models not yet configured
+for (const [model, ctx] of Object.entries(KNOWN_CONTEXT_WINDOWS)) {
+  if (!MODEL_CONTEXT_WINDOWS.has(model)) {
+    MODEL_CONTEXT_WINDOWS.set(model, ctx);
+  }
+}
 
 // Load proxy key table AFTER providers are built so dynamic
 // provider names are registered in VALID_LOCK_PROVIDERS.
@@ -958,7 +994,12 @@ function responsesRequestToChatCompletions(body, provider) {
     }
   }
 
-  const MAX_MESSAGES = 55;
+  // Dynamically calculate MAX_MESSAGES based on the model's context window
+  // Reserve ~20% for output tokens
+  const contextWindow = MODEL_CONTEXT_WINDOWS.get(body.model) || 131072;
+  const inputBudget = Math.floor(contextWindow * 0.8);
+  const MAX_MESSAGES = Math.max(20, Math.min(200, Math.floor(inputBudget / AVG_TOKENS_PER_MESSAGE)));
+  log.info(`[proxy] model="${body.model}" context_window=${contextWindow} tokens, max_messages=${MAX_MESSAGES}`);
   let finalMessages = merged;
   if (merged.length > MAX_MESSAGES) {
     const head = merged.slice(0, 2);

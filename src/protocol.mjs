@@ -240,8 +240,11 @@ export function responsesRequestToChatCompletions(body, provider, reasoningByCal
     }
   }
 
-  // Message cap
-  const MAX_MESSAGES = 55;
+  // Message cap — dynamic based on model context window
+  const AVG_TOKENS_PER_MSG = 800;
+  const KNOWN_WINDOWS = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
+  const ctx = KNOWN_WINDOWS[body?.model] || 131072;
+  const MAX_MESSAGES = Math.max(20, Math.min(200, Math.floor(ctx * 0.8 / AVG_TOKENS_PER_MSG)));
   let finalMessages = merged;
   if (merged.length > MAX_MESSAGES) {
     const head = merged.slice(0, 2);
