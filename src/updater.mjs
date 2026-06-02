@@ -95,11 +95,11 @@ export async function checkForUpdates(currentVersion) {
     // Extract version from tag (e.g., "v1.2.3" -> "1.2.3")
     const latestVersion = release.tag_name.replace(/^v/, '');
     
-    // Find the main asset (zip file)
-    const zipAsset = release.assets.find(a => 
-      a.name.endsWith('.zip') && 
-      (a.name.includes('codex-assistant') || a.name.includes('release'))
-    );
+    // Find the main asset (zip file) — case-insensitive match
+    const zipAsset = release.assets.find(a => {
+      const name = a.name.toLowerCase();
+      return name.endsWith('.zip') && (name.includes('codex-assistant') || name.includes('portable'));
+    });
 
     if (!zipAsset) {
       // No downloadable asset found
