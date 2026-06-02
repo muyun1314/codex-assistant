@@ -720,7 +720,7 @@ function renderProviders() {
       '<div class="model-tags">' +
         (p.models || []).map(function (m) {
           var ctx = m.context_window;
-          var ctxLabel = ctx ? (ctx >= 1000000 ? (ctx / 1000000) + 'M' : (ctx / 1000) + 'K') : '';
+          var ctxLabel = ctx >= 1000000 ? Math.round(ctx / 1000000) + 'M' : ctx >= 1000 ? Math.round(ctx / 1000) + 'K' : '';
           return '<div class="model-tag-wrapper"><span class="model-tag">' + escHtml(m.display_name || m.id) +
             '<span class="remove" onclick="event.stopPropagation();removeModel(' + i + ',\'' + escAttr(m.slug || m.id) + '\')">&times;</span></span>' +
             (ctxLabel ? '<span class="model-context-hint">' + ctxLabel + ' 上下文</span>' : '') +
@@ -750,15 +750,27 @@ function showProviderModal(idx) {
     document.getElementById('pm-protocol').value = p.protocol || 'openai';
     // Show saved models with context_window
     if (p.models && p.models.length > 0) {
+      var CTX_OPTIONS = [
+        { label: '8K', value: 8192 },
+        { label: '16K', value: 16384 },
+        { label: '32K', value: 32768 },
+        { label: '64K', value: 65536 },
+        { label: '128K', value: 131072 },
+        { label: '200K', value: 200000 },
+        { label: '500K', value: 500000 },
+        { label: '1M', value: 1048576 }
+      ];
       var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
       var listEl = document.getElementById('pm-model-list');
       listEl.innerHTML = p.models.map(function (m) {
-        var ctx = m.context_window || KNOWN_CTX[m.id] || 131072;
+        var ctxVal = m.context_window || KNOWN_CTX[m.id] || 200000;
+        var opts = CTX_OPTIONS.map(function (o) {
+          return '<option value="' + o.value + '"' + (o.value === ctxVal ? ' selected' : '') + '>' + o.label + '</option>';
+        }).join('');
         return '<label class="checkbox-item" style="align-items:center;">' +
           '<input type="checkbox" value="' + escAttr(m.id) + '" data-name="' + escAttr(m.display_name || m.id) + '" checked>' +
           '<span style="flex:1;">' + escHtml(m.display_name || m.id) + '</span>' +
-          '<input type="number" class="model-ctx-input" data-model="' + escAttr(m.id) + '" value="' + ctx + '" title="上下文窗口 (tokens)" style="width:90px;font-size:11px;padding:2px 6px;margin:0;flex:none;">' +
-          '<span style="color:var(--text-muted);font-size:10px;flex:none;">tokens</span>' +
+          '<select class="model-ctx-input" data-model="' + escAttr(m.id) + '" style="width:72px;font-size:11px;padding:2px 4px;margin:0;flex:none;">' + opts + '</select>' +
         '</label>';
       }).join('');
       listEl.style.display = 'block';
@@ -824,24 +836,36 @@ async function fetchModels() {
     var listEl = document.getElementById('pm-model-list');
     var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
     var unknownCount = 0;
+    var CTX_OPTIONS = [
+      { label: '8K', value: 8192 },
+      { label: '16K', value: 16384 },
+      { label: '32K', value: 32768 },
+      { label: '64K', value: 65536 },
+      { label: '128K', value: 131072 },
+      { label: '200K', value: 200000 },
+      { label: '500K', value: 500000 },
+      { label: '1M', value: 1048576 }
+    ];
+    var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
+    var unknownCount = 0;
     listEl.innerHTML = models.map(function (m) {
       var isKnown = KNOWN_CTX.hasOwnProperty(m.id);
-      var ctx = KNOWN_CTX[m.id] || 131072;
+      var ctxVal = KNOWN_CTX[m.id] || 200000;
       if (!isKnown) unknownCount++;
-      var warnStyle = isKnown ? '' : 'border-color:var(--warning);';
-      var warnTitle = isKnown ? '上下文窗口 (tokens)' : '上下文窗口 (tokens) — 未知模型，请根据模型文档填写';
-      return '<label class="checkbox-item" style="align-items:center;' + warnStyle + '">' +
+      var opts = CTX_OPTIONS.map(function (o) {
+        return '<option value="' + o.value + '"' + (o.value === ctxVal ? ' selected' : '') + '>' + o.label + '</option>';
+      }).join('');
+      return '<label class="checkbox-item" style="align-items:center;">' +
         '<input type="checkbox" value="' + escAttr(m.id) + '" data-name="' + escAttr(m.display_name || m.id) + '" checked>' +
-        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + (isKnown ? '' : ' <span style="color:var(--warning);font-size:10px;">需确认上下文</span>') + '</span>' +
-        '<input type="number" class="model-ctx-input" data-model="' + escAttr(m.id) + '" value="' + ctx + '" title="' + escAttr(warnTitle) + '" style="width:90px;font-size:11px;padding:2px 6px;margin:0;flex:none;">' +
-        '<span style="color:var(--text-muted);font-size:10px;flex:none;">tokens</span>' +
+        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + '</span>' +
+        '<select class="model-ctx-input" data-model="' + escAttr(m.id) + '" style="width:72px;font-size:11px;padding:2px 4px;margin:0;flex:none;">' + opts + '</select>' +
       '</label>';
     }).join('');
     listEl.style.display = 'block';
     document.getElementById('pm-model-hint').style.display = 'block';
     var statusText = '获取到 ' + models.length + ' 个模型，勾选后保存';
     if (unknownCount > 0) {
-      statusText += '。' + unknownCount + ' 个未知模型的上下文窗口已设为默认值 128K，请根据模型文档确认并修改';
+      statusText += '。' + unknownCount + ' 个未知模型已默认 200K 上下文，请根据模型文档确认';
     }
     document.getElementById('pm-fetch-status').textContent = statusText;
     document.getElementById('pm-fetch-status').className = 'fetch-status ok';
@@ -867,7 +891,7 @@ async function saveProvider() {
   if (listEl.style.display !== 'none') {
     listEl.querySelectorAll('input[type="checkbox"]:checked').forEach(function (cb) {
       var ctxInput = listEl.querySelector('.model-ctx-input[data-model="' + cb.value + '"]');
-      var ctxVal = ctxInput ? parseInt(ctxInput.value) || 131072 : 131072;
+      var ctxVal = ctxInput ? parseInt(ctxInput.value) || 200000 : 200000;
       models.push({ id: cb.value, display_name: cb.dataset.name, slug: cb.value, priority: 0, context_window: ctxVal });
     });
   }
