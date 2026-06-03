@@ -9,8 +9,11 @@ import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 const execFileAsync = promisify(execFileCb);
 
-// GitHub repo info - read from package.json
+// GitHub repo info - read from package.json or use defaults
 function getGithubRepoInfo() {
+  // 硬编码默认值，确保便携版也能正确检查更新
+  const defaultRepo = { owner: 'muyun1314', repo: 'codex-assistant' };
+
   try {
     var packagePath = path.join(process.cwd(), 'package.json');
     var packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf-8'));
@@ -19,8 +22,8 @@ function getGithubRepoInfo() {
     if (match) {
       return { owner: match[1], repo: match[2] };
     }
-  } catch (err) { /* fallback */ }
-  return null;
+  } catch (err) { /* fallback to defaults */ }
+  return defaultRepo;
 }
 
 var _repoInfo = getGithubRepoInfo();
