@@ -1,0 +1,2 @@
+# Permission: allow-get-node-status
+# Allows calling the get_node_status command

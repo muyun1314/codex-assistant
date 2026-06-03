@@ -5,6 +5,7 @@
 const STORE_TTL = Number(process.env.STORE_TTL_MS) || 60 * 60 * 1000; // 1 hour
 const STORE_MAX = Number(process.env.STORE_MAX) || 500;
 const MAX_CONSECUTIVE_TOOL_CALLS = Number(process.env.MAX_CONSECUTIVE_TOOL_CALLS) || 20;
+const MAX_ENTRY_SIZE = Number(process.env.MAX_ENTRY_SIZE_BYTES) || 1024 * 1024; // 1MB per response store entry
 
 export const responseStore = new Map();
 export const reasoningIndex = new Map(); // callId -> reasoningContent
@@ -22,6 +23,15 @@ export function touchResponse(id) {
 
 export function storeResponse(id, data, log) {
   if (!id) return;
+
+  // Reject oversized entries to prevent memory exhaustion
+  try {
+    var entrySize = JSON.stringify(data).length;
+    if (entrySize > MAX_ENTRY_SIZE) {
+      if (log) log.warn(`[proxy] response ${id} exceeds max entry size (${entrySize} > ${MAX_ENTRY_SIZE} bytes), skipping store`);
+      return;
+    }
+  } catch (e) { /* stringify may fail on circular refs, allow storage attempt */ }
 
   if (responseStore.size >= STORE_MAX) {
     const now = Date.now();

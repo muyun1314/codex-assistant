@@ -26,6 +26,9 @@ var APP_DATA_BASE = IS_INSTALLED
 var USER_DIR = path.join(APP_DATA_BASE, IS_INSTALLED ? 'CodexAssistant' : '', 'user');
 var CODEXPP_CONFIG_FILE = path.join(USER_DIR, 'codexpp-config.json');
 var CODEX_CONFIG_DIR = path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex');
+var CODEX_MARKER = '# Modified by Codex Assistant';
+var CODEX_DIVIDER = '# ============================================';
+var CODEX_RESTORE_HINT = '# 替换去掉注释，即可恢复初始配置';
 
 // ==================== CSRF Protection ====================
 var CSRF_TOKEN = crypto.randomBytes(32).toString('hex');
@@ -103,19 +106,35 @@ function backupTimestamp() {
 function autoBackupCodexConfig() {
   try {
     const configPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
-    if (!fs.existsSync(configPath)) return;
-    const MARKER = '# Modified by Codex Assistant';
+    if (!fs.existsSync(configPath)) {
+      console.log('[backup] Config file not found:', configPath);
+      return;
+    }
     const content = fs.readFileSync(configPath, 'utf8');
-    if (content.startsWith(MARKER)) return; // 已备份过，跳过
+
+    // 检查是否已被 Codex Assistant 修改过（新旧两种标记）
+    const hasNewMarker = content.startsWith(CODEX_MARKER);
+    const hasOldMarker = content.startsWith('# Codex 配置 - 由 Codex Assistant UI 自动生成');
+    const hasDivider = content.includes(CODEX_DIVIDER);
+    if (hasNewMarker || hasOldMarker || hasDivider) {
+      console.log('[backup] Config already modified by Codex Assistant, skipping backup');
+      return; // 已备份过，跳过
+    }
 
     // 未标记 = 首次使用或被外部修改，执行备份
     const backupDir = IS_INSTALLED
       ? path.join(APP_DATA_BASE, 'CodexAssistant', 'backup')
       : path.join(PROJECT_DIR, 'backup');
-    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+    console.log('[backup] Backup directory:', backupDir);
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+      console.log('[backup] Created backup directory');
+    }
 
-    const zipName = `codex-backup-auto-${backupTimestamp()}.zip`;
+    // 使用本地时间命名，格式：原始配置自动备份-YYYY-MM-DD-HH-MM-SS
+    const zipName = `原始配置自动备份-${backupTimestamp()}.zip`;
     const zipPath = path.join(backupDir, zipName);
+    console.log('[backup] Backup file:', zipPath);
 
     const tempDir = path.join(os.tmpdir(), 'codex-auto-backup-' + Date.now());
     fs.mkdirSync(tempDir, { recursive: true });
@@ -124,19 +143,42 @@ function autoBackupCodexConfig() {
       { name: 'auth.json', path: path.join(CODEX_CONFIG_DIR, 'auth.json') },
     ];
     for (const f of filesToBackup) {
-      if (fs.existsSync(f.path)) fs.copyFileSync(f.path, path.join(tempDir, f.name));
+      if (fs.existsSync(f.path)) {
+        fs.copyFileSync(f.path, path.join(tempDir, f.name));
+        console.log('[backup] Copied:', f.name);
+      } else {
+        console.log('[backup] File not found, skipping:', f.path);
+      }
     }
     try {
-      execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${tempDir}\\*' -DestinationPath '${zipPath}' -Force"`, { stdio: 'ignore' });
+      console.log('[backup] Creating zip archive...');
+      execFileSync('powershell', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        `Compress-Archive -Path '${tempDir}\\*' -DestinationPath '${zipPath}' -Force`
+      ], { stdio: 'ignore' });
       console.log('[backup] Auto-backup created:', zipName);
+    } catch (zipError) {
+      console.error('[backup] Failed to create zip:', zipError.message);
+      throw zipError;
     } finally {
       try { fs.rmSync(tempDir, { recursive: true }); } catch {}
     }
 
-    // 清理超过 50 份的旧备份
-    const backups = fs.readdirSync(backupDir).filter(f => f.startsWith('codex-backup-') && f.endsWith('.zip')).sort();
+    // 首次自动备份默认锁定，不可删除
+    fs.writeFileSync(zipPath + '.locked', '', 'utf8');
+    console.log('[backup] Auto-backup locked:', zipName);
+
+    // 清理超过 50 份的旧备份（跳过锁定的备份和原始配置备份）
+    const backups = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith('codex-backup-') && f.endsWith('.zip') && !f.startsWith('原始配置自动备份-'))
+      .sort();
     while (backups.length > 50) {
-      try { fs.unlinkSync(path.join(backupDir, backups.shift())); } catch {}
+      const oldBackup = backups.shift();
+      const oldPath = path.join(backupDir, oldBackup);
+      // 跳过锁定的备份
+      if (!fs.existsSync(oldPath + '.locked')) {
+        try { fs.unlinkSync(oldPath); } catch {}
+      }
     }
   } catch (e) {
     console.error('[backup] Auto-backup failed:', e.message);
@@ -337,13 +379,46 @@ function readCodexConfig() {
   return fs.readFileSync(cfgPath, 'utf8');
 }
 
-function writeCodexConfig(content) {
+function writeCodexConfig(newSection) {
   const cfgPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
-  // Ensure the Codex Assistant marker is present
-  if (!content.startsWith(CODEX_MARKER)) {
-    content = CODEX_MARKER + '\n' + content;
+  const dividerIndex = newSection.indexOf(CODEX_DIVIDER);
+
+  // 如果新内容已经包含分割线，说明是更新操作，直接写入
+  if (dividerIndex >= 0) {
+    fs.writeFileSync(cfgPath, newSection);
+    return;
   }
-  fs.writeFileSync(cfgPath, content);
+
+  // 读取现有配置
+  let existingContent = '';
+  if (fs.existsSync(cfgPath)) {
+    existingContent = fs.readFileSync(cfgPath, 'utf8');
+  }
+
+  // 检查是否已有分割线（之前被 Codex Assistant 修改过）
+  const existingDividerIndex = existingContent.indexOf(CODEX_DIVIDER);
+
+  if (existingDividerIndex >= 0) {
+    // 已有分割线：保留注释部分，只更新分割线后面的内容
+    const commentedPart = existingContent.substring(0, existingDividerIndex);
+    const newContent = CODEX_MARKER + '\n' + commentedPart + CODEX_DIVIDER + '\n' + newSection;
+    fs.writeFileSync(cfgPath, newContent);
+  } else {
+    // 首次写入：注释掉原内容，追加新配置
+    let commentedOriginal = '';
+    if (existingContent.trim()) {
+      // 将原内容每行前加 "# 替换去掉注释，即可恢复初始配置" 注释掉
+      commentedOriginal = existingContent.split('\n').map(line => {
+        // 空行保持空行
+        if (!line.trim()) return '';
+        // 每行前加恢复提示标记
+        return CODEX_RESTORE_HINT + ' ' + line;
+      }).join('\n');
+    }
+
+    const newContent = CODEX_MARKER + '\n' + commentedOriginal + '\n' + CODEX_DIVIDER + '\n' + newSection;
+    fs.writeFileSync(cfgPath, newContent);
+  }
 }
 
 // Codex auth.json 读写
@@ -476,7 +551,7 @@ async function syncCodexConfig() {
   const auth = readCodexAuth();
   const codexConfig = readCodexConfig();
   const parsed = parseToml(codexConfig);
-  
+
   // 1. 同步 PROXY_AUTH_KEY 到 Codex auth.json
   const proxyKey = env.PROXY_AUTH_KEY || '';
   const codexKey = auth.OPENAI_API_KEY || '';
@@ -485,7 +560,7 @@ async function syncCodexConfig() {
     writeCodexAuth(auth);
     syncResults.push('已同步 PROXY_AUTH_KEY 到 Codex auth.json');
   }
-  
+
   // 2. 同步端口到 Codex config.toml
   var proxyPort = env.PROXY_PORT || '4000';
   var codexPort = '';
@@ -495,13 +570,27 @@ async function syncCodexConfig() {
     if (match) codexPort = match[1];
   }
   if (proxyPort !== codexPort && codexConfig) {
-    var newConfig = codexConfig.replace(/base_url = "http:\/\/127\.0\.0\.1:\d+\/v1"/g, 'base_url = "http://127.0.0.1:' + proxyPort + '/v1"');
-    if (newConfig !== codexConfig) {
-      writeCodexConfig(newConfig);
-      syncResults.push('已同步端口 ' + codexPort + ' -> ' + proxyPort + ' 到 Codex config.toml');
+    // 只替换分割线后面的部分，保留注释掉的原内容
+    var dividerIndex = codexConfig.indexOf(CODEX_DIVIDER);
+    if (dividerIndex >= 0) {
+      var beforeDivider = codexConfig.substring(0, dividerIndex + CODEX_DIVIDER.length);
+      var afterDivider = codexConfig.substring(dividerIndex + CODEX_DIVIDER.length);
+      var newAfter = afterDivider.replace(/base_url = "http:\/\/127\.0\.0\.1:\d+\/v1"/g, 'base_url = "http://127.0.0.1:' + proxyPort + '/v1"');
+      if (newAfter !== afterDivider) {
+        var newConfig = beforeDivider + newAfter;
+        fs.writeFileSync(path.join(CODEX_CONFIG_DIR, 'config.toml'), newConfig);
+        syncResults.push('已同步端口 ' + codexPort + ' -> ' + proxyPort + ' 到 Codex config.toml');
+      }
+    } else {
+      // 没有分割线，直接替换整个文件（兼容旧格式）
+      var newConfig = codexConfig.replace(/base_url = "http:\/\/127\.0\.0\.1:\d+\/v1"/g, 'base_url = "http://127.0.0.1:' + proxyPort + '/v1"');
+      if (newConfig !== codexConfig) {
+        writeCodexConfig(newConfig);
+        syncResults.push('已同步端口 ' + codexPort + ' -> ' + proxyPort + ' 到 Codex config.toml');
+      }
     }
   }
-  
+
   return { success: true, synced: syncResults };
 }
 
@@ -692,14 +781,14 @@ function trustCodexDirectory(dir) {
       console.log('[trust] config.toml not found:', cfgPath);
       return;
     }
-    
+
     let content = fs.readFileSync(cfgPath, 'utf8');
     // Codex 使用小写反斜杠路径格式，如 f:\workspace\myproject
     const normalizedDir = dir.replace(/\//g, '\\').toLowerCase();
     const projectKey = `[projects.'${normalizedDir}']`;
-    
+
     console.log('[trust] checking:', projectKey);
-    
+
     // 检查是否已经信任
     if (content.includes(projectKey)) {
       // 已存在，检查是否有 trust_level
@@ -726,11 +815,20 @@ function trustCodexDirectory(dir) {
       content = content.replace(projectKey, `${projectKey}\ntrust_level = "trusted"`);
       console.log('[trust] added trust_level to existing entry');
     } else {
-      // 添加新的信任配置
-      content = content.trimEnd() + `\n\n${projectKey}\ntrust_level = "trusted"\n`;
+      // 添加新的信任配置到分割线后面（如果存在）
+      const dividerIndex = content.indexOf(CODEX_DIVIDER);
+      if (dividerIndex >= 0) {
+        // 有分割线，在分割线后追加
+        const beforeDivider = content.substring(0, dividerIndex + CODEX_DIVIDER.length);
+        const afterDivider = content.substring(dividerIndex + CODEX_DIVIDER.length);
+        content = beforeDivider + afterDivider.trimEnd() + `\n\n${projectKey}\ntrust_level = "trusted"\n`;
+      } else {
+        // 没有分割线，追加到文件末尾
+        content = content.trimEnd() + `\n\n${projectKey}\ntrust_level = "trusted"\n`;
+      }
       console.log('[trust] added new trust entry');
     }
-    
+
     fs.writeFileSync(cfgPath, content);
     console.log('[trust] saved');
   } catch (e) {
@@ -1390,7 +1488,6 @@ type = "openai-compatible"
 
   // ==================== Codex 配置备份与恢复 ====================
 
-  const CODEX_MARKER = '# Modified by Codex Assistant';
   const CODEX_BACKUP_MAX = 50;
   var CODEX_BACKUP_DIR = IS_INSTALLED
     ? path.join(APP_DATA_BASE, 'CodexAssistant', 'backup')
@@ -1428,7 +1525,10 @@ type = "openai-compatible"
       fs.copyFileSync(f.path, path.join(tempDir, f.name));
     }
     try {
-      execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${tempDir}\\*' -DestinationPath '${zipPath}' -Force"`, { stdio: 'ignore' });
+      execFileSync('powershell', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        `Compress-Archive -Path '${tempDir}\\*' -DestinationPath '${zipPath}' -Force`
+      ], { stdio: 'ignore' });
     } finally {
       try { fs.rmSync(tempDir, { recursive: true }); } catch {}
     }
@@ -1457,7 +1557,7 @@ type = "openai-compatible"
     try {
       const backupDir = getCodexBackupDir();
       const backups = fs.readdirSync(backupDir)
-        .filter(f => f.startsWith('codex-backup-') && f.endsWith('.zip'))
+        .filter(f => f.endsWith('.zip') && (f.startsWith('codex-backup-') || f.startsWith('原始配置自动备份-')))
         .sort().reverse()
         .map(f => {
           const stat = fs.statSync(path.join(backupDir, f));
@@ -1498,7 +1598,10 @@ type = "openai-compatible"
       const tempDir = path.join(os.tmpdir(), 'codex-restore-' + Date.now());
       fs.mkdirSync(tempDir, { recursive: true });
       try {
-        execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${tempDir}' -Force"`, { stdio: 'ignore' });
+        execFileSync('powershell', [
+          '-NoProfile', '-NonInteractive', '-Command',
+          `Expand-Archive -Path '${zipPath}' -DestinationPath '${tempDir}' -Force`
+        ], { stdio: 'ignore' });
         const configPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
         const authPath = path.join(CODEX_CONFIG_DIR, 'auth.json');
         const restoredConfig = path.join(tempDir, 'config.toml');

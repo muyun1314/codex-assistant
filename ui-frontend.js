@@ -6,14 +6,33 @@
 let providers = { providers: [] };
 let statusTimer = null;
 let currentDefaultProvider = '';
-let currentTheme = localStorage.getItem('codex-assistant-theme') || 'light';
+let currentTheme = localStorage.getItem('codex-assistant-theme') || 'system';
 
 // ---------- Theme ----------
-function toggleTheme() {
-  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-  document.body.className = currentTheme === 'light' ? 'theme-light' : '';
-  localStorage.setItem('codex-assistant-theme', currentTheme);
+function getSystemTheme() {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function getEffectiveTheme() {
+  if (currentTheme === 'system') {
+    return getSystemTheme();
+  }
+  return currentTheme;
+}
+
+function setTheme(theme) {
+  currentTheme = theme;
+  localStorage.setItem('codex-assistant-theme', theme);
+  applyTheme();
   updateThemeUI();
+  updateThemeRadioUI();
+}
+
+function toggleTheme() {
+  const themes = ['system', 'light', 'dark'];
+  const currentIndex = themes.indexOf(currentTheme);
+  const nextTheme = themes[(currentIndex + 1) % themes.length];
+  setTheme(nextTheme);
 }
 
 function updateThemeUI() {
@@ -21,23 +40,36 @@ function updateThemeUI() {
   const icon = document.getElementById('icon-theme');
   if (!btn || !icon) return;
 
-  if (currentTheme === 'dark') {
-    btn.querySelector('span').textContent = '浅色模式';
+  const effective = getEffectiveTheme();
+  if (currentTheme === 'system') {
+    btn.querySelector('span').textContent = '跟随系统';
+    icon.innerHTML = '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>';
+  } else if (effective === 'dark') {
+    btn.querySelector('span').textContent = '深色模式';
     icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
   } else {
-    btn.querySelector('span').textContent = '深色模式';
+    btn.querySelector('span').textContent = '浅色模式';
     icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
   }
 }
 
+function updateThemeRadioUI() {
+  const radio = document.querySelector('input[name="theme-mode"][value="' + currentTheme + '"]');
+  if (radio) radio.checked = true;
+}
+
 function applyTheme() {
-  if (currentTheme === 'light') {
-    document.body.className = 'theme-light';
-  } else {
-    document.body.className = '';
-  }
+  const effective = getEffectiveTheme();
+  document.body.className = effective === 'light' ? 'theme-light' : '';
   updateThemeUI();
 }
+
+// 监听系统主题变化
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+  if (currentTheme === 'system') {
+    applyTheme();
+  }
+});
 
 // ---------- CSRF Token ----------
 var csrfToken = '';
@@ -107,6 +139,7 @@ function showPage(id, navEl) {
   // Per-page init
   if (id === 'logs') { loadLogs(); loadLogConfig(); }
   if (id === 'env') { loadEnv(); loadCodexppConfig(); loadBackupList(); }
+  if (id === 'settings') { loadCloseBehavior(); }
   if (id === 'providers') { loadProviders(); }
 }
 
@@ -1526,16 +1559,105 @@ async function applyUpdate() {
   }
 }
 
+// ==================== Settings ====================
+
+var CLOSE_BEHAVIOR_KEY = 'codex-assistant-close-behavior';
+
+function loadCloseBehavior() {
+  var saved = localStorage.getItem(CLOSE_BEHAVIOR_KEY);
+  var behavior = saved !== null ? parseInt(saved) : 1; // default: minimize to tray
+  var radios = document.querySelectorAll('input[name="close-behavior"]');
+  radios.forEach(function (r) {
+    r.checked = parseInt(r.value) === behavior;
+  });
+  // Tell Rust the current behavior
+  if (window.__TAURI__ && window.__TAURI__.core) {
+    window.__TAURI__.core.invoke('set_close_behavior', { behavior: behavior });
+  }
+}
+
+function setCloseBehavior(value) {
+  localStorage.setItem(CLOSE_BEHAVIOR_KEY, String(value));
+  // Tell Rust the new behavior
+  if (window.__TAURI__ && window.__TAURI__.core) {
+    window.__TAURI__.core.invoke('set_close_behavior', { behavior: value });
+  }
+  var labels = { 0: '直接关闭', 1: '最小化到托盘', 2: '每次询问' };
+  toast('关闭行为已设置为：' + labels[value]);
+}
+
+// ==================== Close Confirmation Dialog ====================
+
+function showCloseConfirmDialog() {
+  // 创建确认对话框
+  var mask = document.createElement('div');
+  mask.className = 'modal-mask show';
+  mask.style.zIndex = '10001';
+  mask.innerHTML = '<div class="modal" style="width:400px;">' +
+    '<h2>关闭窗口</h2>' +
+    '<p style="margin-bottom:var(--space-5);color:var(--text-secondary);">请选择如何处理窗口：</p>' +
+    '<div class="modal-btns" style="flex-direction:column;gap:var(--space-2);">' +
+    '<button class="btn btn-primary" style="width:100%;" onclick="confirmCloseAction(\'minimize\')">最小化到托盘</button>' +
+    '<button class="btn btn-danger" style="width:100%;" onclick="confirmCloseAction(\'exit\')">直接退出程序</button>' +
+    '<button class="btn btn-secondary" style="width:100%;" onclick="confirmCloseAction(\'cancel\')">取消</button>' +
+    '</div></div>';
+  document.body.appendChild(mask);
+}
+
+function confirmCloseAction(action) {
+  // 关闭对话框
+  var masks = document.querySelectorAll('.modal-mask');
+  masks.forEach(function(m) {
+    if (m.style.zIndex === '10001') {
+      m.remove();
+    }
+  });
+
+  if (action === 'minimize') {
+    // 最小化到托盘
+    if (window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke('minimize_to_tray');
+    }
+  } else if (action === 'exit') {
+    // 直接退出
+    if (window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke('force_close');
+    }
+  }
+  // cancel: 什么都不做
+}
+
+// 监听 Rust 发来的关闭请求事件
+async function setupCloseEventListener() {
+  try {
+    // Tauri v2 API
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      await window.__TAURI__.event.listen('close-requested', function(event) {
+        console.log('[close] Received close-requested event', event);
+        showCloseConfirmDialog();
+      });
+      console.log('[close] Event listener registered');
+    } else {
+      console.warn('[close] Tauri event API not available');
+    }
+  } catch (e) {
+    console.error('[close] Failed to setup event listener:', e);
+  }
+}
+
 // ==================== Init ====================
 
 (async function () {
   initCsrfToken();
   applyTheme();
+  updateThemeRadioUI();
+  setupCloseEventListener();
   await loadVersion();
   await loadStatus();
   await loadEnv();
   await loadProviders();
   await checkCodexInstalled();
+  loadCloseBehavior();
 
   // Load current Codex config model
   try {

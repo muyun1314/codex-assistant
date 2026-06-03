@@ -6,13 +6,15 @@ import { execFile as execFileCb } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { tryDecryptApiKey } from "./src/crypto-store.mjs";
-import { parseCsv, normalizeModelId, contentHasUrl, sendJson, fetchWithTimeout, readJsonBody, sendUpstreamError } from "./src/shared.mjs";
-import { uid, applyEffortTranslation, normalizeMessages, KNOWN_CONTEXT_WINDOWS, AVG_TOKENS_PER_MESSAGE, DEFAULT_CONTEXT_WINDOW, getModelContextWindow, calcMaxMessages } from "./src/protocol.mjs";
+import { parseCsv, normalizeModelId, contentHasUrl, sendJson, fetchWithTimeout, readJsonBody, sendUpstreamError, wireClientCancel, clientGone, writeWithBackpressure } from "./src/shared.mjs";
+import { uid, applyEffortTranslation, normalizeMessages, KNOWN_CONTEXT_WINDOWS, AVG_TOKENS_PER_MESSAGE, DEFAULT_CONTEXT_WINDOW, getModelContextWindow, calcMaxMessages, normalizeInputToArray, translateUsage, chatCompletionToResponse } from "./src/protocol.mjs";
 import {
   jinaRead, rawFetch, executeWebFetch, ensureWebFetchTool,
   ensureWebFetchHint, runWebFetchLoop, WEB_FETCH_TOOL
 } from "./src/web-fetch.mjs";
 import { handleStreamingResponse, sendResponseAsStream, buildStreamingResponseEvents } from "./src/streaming.mjs";
+import { checkRateLimit, startRateLimitCleanup } from "./src/rate-limit.mjs";
+import { touchResponse, storeResponse, resolveResponseChain } from "./src/store.mjs";
 var execFileAsync = promisify(execFileCb);
 
 var PORT = process.env.PROXY_PORT || 4000;
@@ -95,15 +97,30 @@ var _logFile = null;
         if (st.mtimeMs < cutoff) { fs.unlinkSync(fullPath); }
       } catch(e) { /* file already deleted or locked - safe to ignore */ }
     }
-    // Create new log file for this session
-    // Slice first to get "YYYY-MM-DDTHH:MM:SS", then replace T and : for filename safety
-    var ts = new Date().toISOString().slice(0, 19).replace(/:/g, '-').replace('T', '-');
+    // Create new log file for this session (使用本地时间)
+    var d = new Date();
+    var ts = d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0') + '-' +
+      String(d.getHours()).padStart(2, '0') + '-' +
+      String(d.getMinutes()).padStart(2, '0') + '-' +
+      String(d.getSeconds()).padStart(2, '0');
     _logFile = path.join(LOG_DIR, "proxy-" + ts + ".log");
     _logStream = fs.createWriteStream(_logFile, { flags: "w" });
   } catch(e) {
     console.error("[proxy] Failed to init logging:", e.message);
   }
 })();
+
+// 确保进程退出时关闭日志流
+process.on('exit', function() {
+  if (_logStream) {
+    _logStream.end();
+    _logStream = null;
+  }
+});
+process.on('SIGINT', function() { process.exit(0); });
+process.on('SIGTERM', function() { process.exit(0); });
 
 function _formatLog(level, args) {
   var ts = new Date().toISOString();
@@ -665,10 +682,11 @@ function updateModelAliases() {
   MODEL_ALIASES = {};
   const auxConfig = loadAuxModelConfig();
   if (auxConfig && auxConfig.auxModel && auxConfig.mainModel && auxConfig.auxModel !== auxConfig.mainModel) {
-    const mainProvider = explicitModelProvider.get(normalizeModelId(auxConfig.mainModel));
-    if (mainProvider && enabledProviders.has(mainProvider)) {
-      MODEL_ALIASES[normalizeModelId(auxConfig.auxModel)] = mainProvider;
-      console.log(`[Codex Assistant] Aux model alias: ${auxConfig.auxModel} -> ${mainProvider}`);
+    // 优先使用 auxProvider，如果没有配置则回退到 mainProvider
+    const targetProvider = auxConfig.auxProvider || explicitModelProvider.get(normalizeModelId(auxConfig.mainModel));
+    if (targetProvider && enabledProviders.has(targetProvider)) {
+      MODEL_ALIASES[normalizeModelId(auxConfig.auxModel)] = targetProvider;
+      console.log(`[Codex Assistant] Aux model alias: ${auxConfig.auxModel} -> ${targetProvider}`);
     }
   }
 }
@@ -698,118 +716,6 @@ function resolveProviderForModel(model) {
   
   // 如果找不到提供商，返回 null 而不是抛出错误
   return null;
-}
-
-// Read with LRU bookkeeping: refreshes insertion order so frequently-used roots
-// don't get evicted by the eviction loop in storeResponse.
-function touchResponse(id) {
-  if (!id) return undefined;
-  const entry = responseStore.get(id);
-  if (!entry) return undefined;
-  // Re-insert to move it to the most-recently-used end of the Map.
-  responseStore.delete(id);
-  responseStore.set(id, entry);
-  return entry;
-}
-
-function storeResponse(id, data) {
-  if (!id) return;
-
-  // Reject oversized entries to prevent memory exhaustion
-  try {
-    var entrySize = JSON.stringify(data).length;
-    if (entrySize > MAX_ENTRY_SIZE) {
-      log.warn(`[proxy] response ${id} exceeds max entry size (${entrySize} > ${MAX_ENTRY_SIZE} bytes), skipping store`);
-      return;
-    }
-  } catch (e) { /* stringify may fail on circular refs, allow storage attempt */ }
-
-  if (responseStore.size >= STORE_MAX) {
-    const now = Date.now();
-    for (const [key, val] of responseStore) {
-      if (now - val.storedAt > STORE_TTL) {
-        // Clean up reasoning index for evicted entry
-        if (val.reasoningContent) {
-          for (const out of Array.isArray(val.output) ? val.output : []) {
-            if (out.type === "function_call" && out.call_id) reasoningIndex.delete(out.call_id);
-          }
-        }
-        responseStore.delete(key);
-      }
-    }
-    if (responseStore.size >= STORE_MAX) {
-      const oldest = responseStore.keys().next().value;
-      const oldestVal = responseStore.get(oldest);
-      if (oldestVal?.reasoningContent) {
-        for (const out of Array.isArray(oldestVal.output) ? oldestVal.output : []) {
-          if (out.type === "function_call" && out.call_id) reasoningIndex.delete(out.call_id);
-        }
-      }
-      responseStore.delete(oldest);
-    }
-  }
-
-  const isToolCallOnly = Array.isArray(data.output) &&
-    data.output.length > 0 &&
-    data.output.every((o) => o.type === "function_call");
-
-  let consecutiveToolCalls = 0;
-  if (data.previousResponseId) {
-    const prev = touchResponse(data.previousResponseId);
-    if (prev?.breakerFired) {
-      // Hard breaker already fired up-chain — counter has been reset; don't propagate.
-      consecutiveToolCalls = 0;
-    } else if (isToolCallOnly) {
-      consecutiveToolCalls = (prev?.consecutiveToolCalls || 0) + 1;
-    }
-  }
-
-  responseStore.set(id, { ...data, storedAt: Date.now(), consecutiveToolCalls });
-  
-  // Update reasoning index for O(1) lookup
-  if (data.reasoningContent) {
-    for (const out of Array.isArray(data.output) ? data.output : []) {
-      if (out.type === "function_call" && out.call_id) {
-        reasoningIndex.set(out.call_id, data.reasoningContent);
-      }
-    }
-  }
-  
-  log.info(
-    `[proxy] stored response ${id} (provider=${data.provider || "unknown"}, store size: ${responseStore.size}${consecutiveToolCalls > 0 ? `, consecutive_tc: ${consecutiveToolCalls}` : ""})`
-  );
-}
-
-function resolveResponseChain(previousResponseId) {
-  const chain = [];
-  let currentId = previousResponseId;
-  const visited = new Set();
-
-  while (currentId && !visited.has(currentId)) {
-    visited.add(currentId);
-    const stored = touchResponse(currentId);
-    if (!stored) {
-      log.warn(`[proxy] previous_response_id ${currentId} not found in store`);
-      break;
-    }
-    chain.unshift(stored);
-    currentId = stored.previousResponseId;
-  }
-
-  const items = [];
-  for (const entry of chain) {
-    if (Array.isArray(entry.input)) items.push(...entry.input);
-    if (Array.isArray(entry.output)) items.push(...entry.output);
-  }
-  return items;
-}
-
-function normalizeInputToArray(input) {
-  if (Array.isArray(input)) return input;
-  if (typeof input === "string") {
-    return [{ type: "message", role: "user", content: [{ type: "input_text", text: input }] }];
-  }
-  return [];
 }
 
 function maybeResolvePreviousResponseChain(body, targetProvider) {
@@ -1069,98 +975,7 @@ function responsesRequestToChatCompletions(body, provider) {
 
 // --- Response translation: Chat Completions -> Responses (DeepSeek path) ---
 
-// uid() imported from src/protocol.mjs
-
-function chatCompletionToResponse(cc, model, previousResponseId, metadata) {
-  const responseId = `resp_${uid()}`;
-  const output = [];
-  const choice = cc.choices?.[0];
-
-  if (!choice) {
-    return {
-      id: responseId,
-      object: "response",
-      created_at: cc.created || Math.floor(Date.now() / 1000),
-      status: "completed",
-      model: model || cc.model,
-      output: [],
-      usage: translateUsage(cc.usage),
-    };
-  }
-
-  const msg = choice.message;
-
-  if (msg.tool_calls?.length > 0) {
-    for (const tc of msg.tool_calls) {
-      output.push({
-        type: "function_call",
-        id: `fc_${uid()}`,
-        call_id: tc.id,
-        name: tc.function.name,
-        arguments: tc.function.arguments,
-        status: "completed",
-      });
-    }
-  }
-
-  let text = msg.content || "";
-  text = text.replace(/<think>[\s\S]*?<\/think>\s*/g, "").trim();
-  if (text) {
-    output.push({
-      type: "message",
-      id: `msg_${uid()}`,
-      status: "completed",
-      role: "assistant",
-      content: [{ type: "output_text", text, annotations: [] }],
-    });
-  }
-
-  if (msg.refusal) {
-    const msgItem = output.find((o) => o.type === "message") || {
-      type: "message",
-      id: `msg_${uid()}`,
-      status: "completed",
-      role: "assistant",
-      content: [],
-    };
-    msgItem.content.push({ type: "refusal", refusal: msg.refusal });
-    if (!output.find((o) => o.type === "message")) output.push(msgItem);
-  }
-
-  let status = "completed";
-  let incompleteDetails = null;
-  if (choice.finish_reason === "length") {
-    status = "incomplete";
-    incompleteDetails = { reason: "max_output_tokens" };
-  } else if (choice.finish_reason === "content_filter") {
-    status = "incomplete";
-    incompleteDetails = { reason: "content_filter" };
-  }
-
-  return {
-    id: responseId,
-    object: "response",
-    created_at: cc.created || Math.floor(Date.now() / 1000),
-    status,
-    model: model || cc.model,
-    output,
-    previous_response_id: previousResponseId || null,
-    metadata: metadata || {},
-    usage: translateUsage(cc.usage),
-    incomplete_details: incompleteDetails,
-  };
-}
-
-function translateUsage(u) {
-  if (!u) return { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
-  return {
-    input_tokens: u.prompt_tokens || 0,
-    output_tokens: u.completion_tokens || 0,
-    total_tokens: u.total_tokens || 0,
-    input_tokens_details: { cached_tokens: u.prompt_tokens_details?.cached_tokens || 0 },
-    output_tokens_details: { reasoning_tokens: u.completion_tokens_details?.reasoning_tokens || 0 },
-  };
-}
+// chatCompletionToResponse imported from src/protocol.mjs
 
 // buildStreamingResponseEvents, handleStreamingResponse, sendResponseAsStream imported from src/streaming.mjs
 
@@ -1176,44 +991,6 @@ function translateUsage(u) {
 // a false "client gone" the moment we finished reading the POST body and would
 // kill the upstream stream before any chunk got out. `res.close` only fires when
 // the underlying socket actually goes away.
-//
-// `clientGone(res)` is the corresponding "is the socket actually dead?" check
-// used inside the SSE loops below; it must NOT consult req.destroyed for the same
-// reason.
-function wireClientCancel(res, upstreamRes) {
-  if (!res || !upstreamRes?.body) return () => {};
-  let cancelled = false;
-  const onClose = () => {
-    if (cancelled) return;
-    cancelled = true;
-    try { upstreamRes.body.cancel?.(); } catch { /* ignore */ }
-  };
-  res.once("close", onClose);
-  return () => {
-    cancelled = true;
-    res.off("close", onClose);
-  };
-}
-
-// True iff the response socket is gone — i.e. the client really disconnected.
-// Use this in SSE loops instead of `req.destroyed`, which falsely turns true the
-// moment the request body finishes streaming in.
-//
-// `res.destroyed` flips true on socket teardown. `res.closed` flips true when the
-// underlying socket emits 'close'. We deliberately do NOT check `res.writableEnded`
-// because that becomes true after our own `res.end()` call — and we don't want
-// "we finished writing" to look like "client disappeared".
-function clientGone(res) {
-  return !!(res && (res.destroyed || res.closed));
-}
-
-// Backpressure-aware write. Honours res.write's false return by awaiting drain
-// before resolving. Use in SSE loops so slow clients don't blow up memory.
-function writeWithBackpressure(res, chunk) {
-  if (res.write(chunk)) return;
-  return new Promise((resolve) => res.once("drain", resolve));
-}
-
 // readJsonBody, sendUpstreamError — imported from src/shared.mjs
 
 async function pipeResponsesStreamAndCapture(req, upstreamRes, res, onCompleted) {
@@ -1649,31 +1426,8 @@ async function handleOaiCompatChatCompletions(req, provider, body, res) {
   sendJson(res, upstreamChatRes.status, ccResponse);
 }
 
-// --- Rate limiting ---
-const RATE_LIMIT_WINDOW = Number(process.env.RATE_LIMIT_WINDOW_MS) || 1000;
-const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX) || 60;
-const rateBuckets = new Map();
-
-function checkRateLimit(req) {
-  const key = req.socket.remoteAddress || '127.0.0.1';
-  const now = Date.now();
-  let bucket = rateBuckets.get(key);
-
-  if (!bucket || now - bucket.start > RATE_LIMIT_WINDOW) {
-    bucket = { start: now, count: 0 };
-    rateBuckets.set(key, bucket);
-  }
-
-  bucket.count++;
-  return bucket.count <= RATE_LIMIT_MAX;
-}
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of rateBuckets) {
-    if (now - bucket.start > RATE_LIMIT_WINDOW * 2) rateBuckets.delete(key);
-  }
-}, RATE_LIMIT_WINDOW).unref();
+// 启动限流器清理定时器
+startRateLimitCleanup();
 
 const server = http.createServer(async (req, res) => {
   // Rate limit check

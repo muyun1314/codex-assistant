@@ -16,10 +16,7 @@
 <aside class="sidebar">
   <div class="sidebar-brand">
     <div class="sidebar-brand-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="16 18 22 12 16 6"></polyline>
-        <polyline points="8 6 2 12 8 18"></polyline>
-      </svg>
+      <img src="/ui-favicon.ico" alt="Logo" style="width:20px;height:20px;">
     </div>
     <div>
       <div class="sidebar-brand-text">Codex Assistant</div>
@@ -61,6 +58,14 @@
       <span>运行日志</span>
     </div>
 
+    <div class="nav-item" data-page="settings" onclick="showPage('settings', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+      <span>设置</span>
+    </div>
+
     <div class="nav-spacer"></div>
   </nav>
 
@@ -76,20 +81,6 @@
         检查版本更新
       </button>
     </div>
-    <button class="theme-toggle" id="btn-theme" onclick="toggleTheme()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="icon-theme">
-        <circle cx="12" cy="12" r="5"></circle>
-        <line x1="12" y1="1" x2="12" y2="3"></line>
-        <line x1="12" y1="21" x2="12" y2="23"></line>
-        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-        <line x1="1" y1="12" x2="3" y2="12"></line>
-        <line x1="21" y1="12" x2="23" y2="12"></line>
-        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-      </svg>
-      <span>浅色模式</span>
-    </button>
   </div>
 </aside>
 
@@ -307,6 +298,76 @@
         </div>
       </div>
       <div class="log-box" id="log-box"></div>
+    </div>
+  </div>
+
+  <!-- ===== Settings ===== -->
+  <div class="page" id="page-settings">
+    <div class="page-header">
+      <h1 class="page-title">设置</h1>
+      <p class="page-subtitle">配置软件行为</p>
+    </div>
+
+    <div class="card">
+      <h2>关闭行为</h2>
+      <p class="form-hint" style="margin-bottom:var(--space-4);">点击窗口关闭按钮时的处理方式</p>
+      <div class="radio-card-group horizontal">
+        <label class="radio-card">
+          <input type="radio" name="close-behavior" value="0" onchange="setCloseBehavior(0)">
+          <div class="radio-card-dot"></div>
+          <div class="radio-card-content">
+            <div class="radio-card-title">直接关闭</div>
+            <div class="radio-card-desc">关闭窗口并退出程序</div>
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="close-behavior" value="1" onchange="setCloseBehavior(1)">
+          <div class="radio-card-dot"></div>
+          <div class="radio-card-content">
+            <div class="radio-card-title">最小化到托盘</div>
+            <div class="radio-card-desc">程序继续在后台运行</div>
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="close-behavior" value="2" onchange="setCloseBehavior(2)">
+          <div class="radio-card-dot"></div>
+          <div class="radio-card-content">
+            <div class="radio-card-title">每次询问</div>
+            <div class="radio-card-desc">弹窗提示选择关闭或最小化</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>主题外观</h2>
+      <p class="form-hint" style="margin-bottom:var(--space-4);">选择界面的主题颜色方案</p>
+      <div class="radio-card-group horizontal">
+        <label class="radio-card">
+          <input type="radio" name="theme-mode" value="system" onchange="setTheme('system')">
+          <div class="radio-card-dot"></div>
+          <div class="radio-card-content">
+            <div class="radio-card-title">跟随系统</div>
+            <div class="radio-card-desc">自动匹配系统偏好</div>
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="theme-mode" value="light" onchange="setTheme('light')">
+          <div class="radio-card-dot"></div>
+          <div class="radio-card-content">
+            <div class="radio-card-title">日间模式</div>
+            <div class="radio-card-desc">浅色背景</div>
+          </div>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="theme-mode" value="dark" onchange="setTheme('dark')">
+          <div class="radio-card-dot"></div>
+          <div class="radio-card-content">
+            <div class="radio-card-title">夜间模式</div>
+            <div class="radio-card-desc">深色背景</div>
+          </div>
+        </label>
+      </div>
     </div>
   </div>
 

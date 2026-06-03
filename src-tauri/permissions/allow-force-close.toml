@@ -1,0 +1,2 @@
+# Permission: allow-force-close
+# Allows calling the force_close command

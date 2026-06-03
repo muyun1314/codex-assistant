@@ -1479,3 +1479,117 @@ body.theme-light::before {
   border-color: #fcd34d;
   color: #b45309;
 }
+
+/* ---------- Radio Card Group ---------- */
+
+.radio-card-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.radio-card-group.horizontal {
+  flex-direction: row;
+}
+
+.radio-card-group.horizontal .radio-card {
+  flex: 1;
+  min-width: 0;
+}
+
+.radio-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  position: relative;
+}
+
+.radio-card:hover {
+  border-color: var(--border-default);
+  background: var(--bg-card-hover);
+}
+
+.radio-card input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.radio-card-dot {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-default);
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.radio-card-dot::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transform: scale(0);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.radio-card:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.radio-card:has(input:checked) .radio-card-dot {
+  border-color: var(--accent);
+}
+
+.radio-card:has(input:checked) .radio-card-dot::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.radio-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.radio-card-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.radio-card-desc {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* Light theme radio card */
+.theme-light .radio-card {
+  background: var(--bg-input);
+  border-color: var(--border-subtle);
+}
+
+.theme-light .radio-card:hover {
+  border-color: var(--border-default);
+  background: var(--bg-card-hover);
+}
+
+.theme-light .radio-card:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}

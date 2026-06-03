@@ -6,10 +6,15 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 use std::sync::Mutex;
-use tauri::{Manager, AppHandle};
+use tauri::{Manager, AppHandle, Emitter};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
 
 /// Wrapper around the Node.js child process for thread-safe access.
 struct NodeProcess(Mutex<Option<Child>>);
+
+/// Close behavior: 0=direct close, 1=minimize to tray (default), 2=ask user
+struct CloseBehavior(Mutex<u8>);
 
 /// Try to read the UI port from the `.ui-port` file that ui-server writes.
 fn try_read_port(port_file: &Path) -> Option<u16> {
@@ -56,6 +61,32 @@ fn get_node_status(state: tauri::State<NodeProcess>) -> bool {
     } else {
         false
     }
+}
+
+/// Tauri command: set close behavior (0=close, 1=minimize to tray, 2=ask)
+#[tauri::command]
+fn set_close_behavior(behavior: u8, state: tauri::State<CloseBehavior>) {
+    *state.0.lock().unwrap() = behavior;
+}
+
+/// Tauri command: minimize window to system tray
+#[tauri::command]
+fn minimize_to_tray(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+/// Tauri command: force close the application
+#[tauri::command]
+fn force_close(app: AppHandle, state: tauri::State<NodeProcess>) {
+    // 清理 Node.js 进程
+    let mut guard = state.0.lock().unwrap();
+    if let Some(ref mut child) = *guard {
+        kill_process_tree(child);
+        *guard = None;
+    }
+    app.exit(0);
 }
 
 /// Tauri command: restart the Node.js process.
@@ -155,6 +186,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(NodeProcess(Mutex::new(None)))
+        .manage(CloseBehavior(Mutex::new(1)))
         .setup(|app| {
             let resource_dir = resolve_resource_dir(app.handle());
 
@@ -184,20 +216,98 @@ fn main() {
                 window.show().expect("Failed to show window");
             }
 
+            // Build system tray menu
+            let show_item = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "退出").build(app)?;
+            let menu = MenuBuilder::new(app).items(&[&show_item, &quit_item]).build()?;
+
+            // Build system tray icon
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .tooltip("Codex Assistant")
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            // 清理 Node.js 进程后再退出
+                            if let Some(window) = app.get_webview_window("main") {
+                                let state = window.state::<NodeProcess>();
+                                let mut guard = state.0.lock().unwrap();
+                                if let Some(ref mut child) = *guard {
+                                    kill_process_tree(child);
+                                    *guard = None;
+                                }
+                            }
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                // Use AppHandle to access state (compatible with all Tauri v2 versions)
-                let state = window.state::<NodeProcess>();
-                let mut guard = state.0.lock().unwrap();
-                if let Some(ref mut child) = *guard {
-                    kill_process_tree(child);
-                    *guard = None;
+            match event {
+                tauri::WindowEvent::Destroyed => {
+                    // Use AppHandle to access state (compatible with all Tauri v2 versions)
+                    let state = window.state::<NodeProcess>();
+                    let mut guard = state.0.lock().unwrap();
+                    if let Some(ref mut child) = *guard {
+                        kill_process_tree(child);
+                        *guard = None;
+                    }
                 }
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    let behavior = window.state::<CloseBehavior>();
+                    let b = *behavior.0.lock().unwrap();
+                    match b {
+                        0 => { /* direct close, do nothing */ }
+                        1 => {
+                            // Minimize to tray
+                            let _ = api.prevent_close();
+                            if let Some(window) = window.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                        2 => {
+                            // Ask user — emit event to frontend
+                            let _ = api.prevent_close();
+                            if let Some(window) = window.get_webview_window("main") {
+                                let _ = window.emit("close-requested", ());
+                            }
+                        }
+                        _ => {
+                            let _ = api.prevent_close();
+                            if let Some(window) = window.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         })
-        .invoke_handler(tauri::generate_handler![get_node_status, restart_node])
+        .invoke_handler(tauri::generate_handler![get_node_status, restart_node, set_close_behavior, minimize_to_tray, force_close])
         .run(tauri::generate_context!())
         .expect("error while running Codex Assistant");
 }

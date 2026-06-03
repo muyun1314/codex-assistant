@@ -387,6 +387,42 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Default permissions for Codex Assistant\n#### This default permission set includes:\n\n- `allow-get-node-status`\n- `allow-restart-node`\n- `allow-set-close-behavior`\n- `allow-minimize-to-tray`\n- `allow-force-close`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for Codex Assistant\n#### This default permission set includes:\n\n- `allow-get-node-status`\n- `allow-restart-node`\n- `allow-set-close-behavior`\n- `allow-minimize-to-tray`\n- `allow-force-close`"
+        },
+        {
+          "description": "Allows calling the force_close command",
+          "type": "string",
+          "const": "allow-force-close",
+          "markdownDescription": "Allows calling the force_close command"
+        },
+        {
+          "description": "Allows calling the get_node_status command",
+          "type": "string",
+          "const": "allow-get-node-status",
+          "markdownDescription": "Allows calling the get_node_status command"
+        },
+        {
+          "description": "Allows calling the minimize_to_tray command",
+          "type": "string",
+          "const": "allow-minimize-to-tray",
+          "markdownDescription": "Allows calling the minimize_to_tray command"
+        },
+        {
+          "description": "Allows calling the restart_node command",
+          "type": "string",
+          "const": "allow-restart-node",
+          "markdownDescription": "Allows calling the restart_node command"
+        },
+        {
+          "description": "Allows calling the set_close_behavior command",
+          "type": "string",
+          "const": "allow-set-close-behavior",
+          "markdownDescription": "Allows calling the set_close_behavior command"
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",
