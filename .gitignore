@@ -15,3 +15,7 @@ dist/
 src-tauri/target/
 src-tauri/resources/node/
 release-notes.md
+_codex-snapshot/
+set-codex-chinese.cmd
+zh-CN.pak
+dev.cmd
