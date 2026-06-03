@@ -1,0 +1,25 @@
+# Codex 配置 - 由 Codex Assistant UI 自动生成
+model = "mimo-v2.5-pro"
+model_reasoning_effort = "medium"
+model_provider = "local_proxy"
+model_context_window = 1048576
+max_tokens = 4096
+enable_request_compression = false
+allow_model_truncation = false
+
+[model_providers.local_proxy]
+name = "mimo-v2.5-pro"
+base_url = "http://127.0.0.1:4000/v1"
+wire_api = "responses"
+requires_openai_auth = true
+
+[marketplaces.openai-bundled]
+last_updated = "2026-06-02T07:33:53Z"
+source_type = "local"
+source = '\\?\C:\Users\DQ\.codex\.tmp\bundled-marketplaces\openai-bundled'
+
+[projects.'f:\workspace\codex-assistant\dist\codex-assistant-v1.2.2-portable']
+trust_level = "trusted"
+
+[desktop]
+localeOverride = "zh-CN"

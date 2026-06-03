@@ -1,7 +1,7 @@
 {
-  "version": "1.2.2",
+  "version": "1.2.3",
   "build": 1,
-  "releasedAt": "2026-06-02",
-  "changelog": "模型上下文窗口自适应、Codex CLI检测修复、UI交互优化"
+  "releasedAt": "2026-06-03",
+  "changelog": "Codex配置备份与恢复、环境配置UI优化"
 }
 

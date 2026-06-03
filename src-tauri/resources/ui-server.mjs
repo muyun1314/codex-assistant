@@ -88,6 +88,52 @@ LOG_LEVEL=info
 // 启动时初始化
 initUserDir();
 
+// 自动备份 Codex 配置（首次启动或配置被外部修改时）
+function autoBackupCodexConfig() {
+  try {
+    const configPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
+    if (!fs.existsSync(configPath)) return;
+    const MARKER = '# Modified by Codex Assistant';
+    const content = fs.readFileSync(configPath, 'utf8');
+    if (content.startsWith(MARKER)) return; // 已备份过，跳过
+
+    // 未标记 = 首次使用或被外部修改，执行备份
+    const backupDir = IS_INSTALLED
+      ? path.join(APP_DATA_BASE, 'CodexAssistant', 'backup')
+      : path.join(PROJECT_DIR, 'backup');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const zipName = `codex-backup-auto-${timestamp}.zip`;
+    const zipPath = path.join(backupDir, zipName);
+
+    const tempDir = path.join(os.tmpdir(), 'codex-auto-backup-' + Date.now());
+    fs.mkdirSync(tempDir, { recursive: true });
+    const filesToBackup = [
+      { name: 'config.toml', path: configPath },
+      { name: 'auth.json', path: path.join(CODEX_CONFIG_DIR, 'auth.json') },
+    ];
+    for (const f of filesToBackup) {
+      if (fs.existsSync(f.path)) fs.copyFileSync(f.path, path.join(tempDir, f.name));
+    }
+    try {
+      execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${tempDir}\\*' -DestinationPath '${zipPath}' -Force"`, { stdio: 'ignore' });
+      console.log('[backup] Auto-backup created:', zipName);
+    } finally {
+      try { fs.rmSync(tempDir, { recursive: true }); } catch {}
+    }
+
+    // 清理超过 50 份的旧备份
+    const backups = fs.readdirSync(backupDir).filter(f => f.startsWith('codex-backup-') && f.endsWith('.zip')).sort();
+    while (backups.length > 50) {
+      try { fs.unlinkSync(path.join(backupDir, backups.shift())); } catch {}
+    }
+  } catch (e) {
+    console.error('[backup] Auto-backup failed:', e.message);
+  }
+}
+autoBackupCodexConfig();
+
 // ==================== .env 读写（只保留真正全局的变量）====================
 // GLOBAL_ENV_KEYS defines the allowed keys for .env (non-provider settings).
 // Provider API keys now live exclusively in provider-configs.json (encrypted).
@@ -283,6 +329,10 @@ function readCodexConfig() {
 
 function writeCodexConfig(content) {
   const cfgPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
+  // Ensure the Codex Assistant marker is present
+  if (!content.startsWith(CODEX_MARKER)) {
+    content = CODEX_MARKER + '\n' + content;
+  }
   fs.writeFileSync(cfgPath, content);
 }
 
@@ -1310,6 +1360,157 @@ id = "openai-bundled"
 type = "openai-compatible"
 `;
       writeCodexConfig(config);
+      return sendJson(res, 200, { success: true });
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
+  }
+
+  // ==================== Codex 配置备份与恢复 ====================
+
+  const CODEX_MARKER = '# Modified by Codex Assistant';
+  const CODEX_BACKUP_MAX = 50;
+  var CODEX_BACKUP_DIR = IS_INSTALLED
+    ? path.join(APP_DATA_BASE, 'CodexAssistant', 'backup')
+    : path.join(PROJECT_DIR, 'backup');
+
+  function getCodexBackupDir() {
+    if (!fs.existsSync(CODEX_BACKUP_DIR)) fs.mkdirSync(CODEX_BACKUP_DIR, { recursive: true });
+    return CODEX_BACKUP_DIR;
+  }
+
+  function hasCodexMarker(filePath) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      return content.startsWith(CODEX_MARKER);
+    } catch { return false; }
+  }
+
+  function backupCodexFiles(label) {
+    const backupDir = getCodexBackupDir();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const zipName = `codex-backup-${label || timestamp}.zip`;
+    const zipPath = path.join(backupDir, zipName);
+
+    const filesToBackup = [];
+    const configPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
+    const authPath = path.join(CODEX_CONFIG_DIR, 'auth.json');
+    if (fs.existsSync(configPath)) filesToBackup.push({ name: 'config.toml', path: configPath });
+    if (fs.existsSync(authPath)) filesToBackup.push({ name: 'auth.json', path: authPath });
+
+    if (filesToBackup.length === 0) return null;
+
+    // Create zip using PowerShell
+    const tempDir = path.join(os.tmpdir(), 'codex-backup-' + Date.now());
+    fs.mkdirSync(tempDir, { recursive: true });
+    for (const f of filesToBackup) {
+      fs.copyFileSync(f.path, path.join(tempDir, f.name));
+    }
+    try {
+      execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${tempDir}\\*' -DestinationPath '${zipPath}' -Force"`, { stdio: 'ignore' });
+    } finally {
+      try { fs.rmSync(tempDir, { recursive: true }); } catch {}
+    }
+
+    // Cleanup old backups (keep max CODEX_BACKUP_MAX)
+    const backups = fs.readdirSync(backupDir).filter(f => f.startsWith('codex-backup-') && f.endsWith('.zip')).sort();
+    while (backups.length > CODEX_BACKUP_MAX) {
+      try { fs.unlinkSync(path.join(backupDir, backups.shift())); } catch {}
+    }
+
+    return zipPath;
+  }
+
+  function markCodexFile(filePath) {
+    try {
+      let content = fs.readFileSync(filePath, 'utf8');
+      if (!content.startsWith(CODEX_MARKER)) {
+        content = CODEX_MARKER + '\n' + content;
+        fs.writeFileSync(filePath, content, 'utf8');
+      }
+    } catch {}
+  }
+
+  // API: 获取备份列表
+  if (pathname === '/api/codex-backup/list' && method === 'GET') {
+    try {
+      const backupDir = getCodexBackupDir();
+      const backups = fs.readdirSync(backupDir)
+        .filter(f => f.startsWith('codex-backup-') && f.endsWith('.zip'))
+        .sort().reverse()
+        .map(f => {
+          const stat = fs.statSync(path.join(backupDir, f));
+          return { name: f, size: stat.size, time: stat.mtime };
+        });
+      // Check if config has Codex Assistant marker
+      const configPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
+      const isModified = hasCodexMarker(configPath);
+      return sendJson(res, 200, { backups, isModified, backupDir: CODEX_BACKUP_DIR });
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
+  }
+
+  // API: 手动备份
+  if (pathname === '/api/codex-backup/create' && method === 'POST') {
+    try {
+      const zipPath = backupCodexFiles();
+      if (!zipPath) return sendJson(res, 400, { success: false, error: '没有可备份的 Codex 配置文件' });
+      return sendJson(res, 200, { success: true, path: zipPath, message: '备份已创建' });
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
+  }
+
+  // API: 恢复备份
+  if (pathname === '/api/codex-backup/restore' && method === 'POST') {
+    try {
+      const body = await collectBody(req);
+      const { name } = JSON.parse(body || '{}');
+      if (!name) return sendJson(res, 400, { success: false, error: '请指定备份文件名' });
+
+      const backupDir = getCodexBackupDir();
+      const zipPath = path.join(backupDir, name);
+      if (!fs.existsSync(zipPath)) return sendJson(res, 404, { success: false, error: '备份文件不存在' });
+
+      // Backup current config before restoring
+      backupCodexFiles('pre-restore-' + Date.now());
+
+      // Extract zip to temp and copy files
+      const tempDir = path.join(os.tmpdir(), 'codex-restore-' + Date.now());
+      fs.mkdirSync(tempDir, { recursive: true });
+      try {
+        execSync(`powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${tempDir}' -Force"`, { stdio: 'ignore' });
+        const configPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
+        const authPath = path.join(CODEX_CONFIG_DIR, 'auth.json');
+        const restoredConfig = path.join(tempDir, 'config.toml');
+        const restoredAuth = path.join(tempDir, 'auth.json');
+        if (fs.existsSync(restoredConfig)) fs.copyFileSync(restoredConfig, configPath);
+        if (fs.existsSync(restoredAuth)) fs.copyFileSync(restoredAuth, authPath);
+        return sendJson(res, 200, { success: true, message: '配置已恢复，请重启 Codex 使更改生效' });
+      } finally {
+        try { fs.rmSync(tempDir, { recursive: true }); } catch {}
+      }
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
+  }
+
+  // API: 自动备份（首次启动时调用）
+  if (pathname === '/api/codex-backup/auto' && method === 'POST') {
+    try {
+      const configPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
+      if (!fs.existsSync(configPath)) return sendJson(res, 200, { skipped: true });
+      // Only backup if config doesn't have our marker (first time or restored by user)
+      if (!hasCodexMarker(configPath)) {
+        const zipPath = backupCodexFiles('auto');
+        if (zipPath) return sendJson(res, 200, { backedUp: true, path: zipPath });
+      }
+      return sendJson(res, 200, { backedUp: false });
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
+  }
+
+  // API: 删除备份
+  if (pathname === '/api/codex-backup/delete' && method === 'POST') {
+    try {
+      const body = await collectBody(req);
+      const { name } = JSON.parse(body || '{}');
+      const backupDir = getCodexBackupDir();
+      const zipPath = path.join(backupDir, name);
+      if (!name || !fs.existsSync(zipPath)) return sendJson(res, 404, { success: false, error: '备份文件不存在' });
+      fs.unlinkSync(zipPath);
       return sendJson(res, 200, { success: true });
     } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }

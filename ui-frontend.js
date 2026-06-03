@@ -106,7 +106,7 @@ function showPage(id, navEl) {
 
   // Per-page init
   if (id === 'logs') { loadLogs(); loadLogConfig(); }
-  if (id === 'env') { loadEnv(); loadCodexppConfig(); }
+  if (id === 'env') { loadEnv(); loadCodexppConfig(); loadBackupList(); }
   if (id === 'providers') { loadProviders(); }
 }
 
@@ -528,6 +528,94 @@ async function checkCodexInstalled() {
     if (mgrBtn) mgrBtn.disabled = !result.codexPlusPlusManager;
   } catch (e) {
     console.error('Failed to check Codex installed:', e);
+  }
+}
+
+// ==================== Codex Backup & Restore ====================
+
+async function loadBackupList() {
+  try {
+    var d = await api('/api/codex-backup/list');
+    var statusEl = document.getElementById('backup-status');
+    var listEl = document.getElementById('backup-list');
+    if (d.isModified) {
+      statusEl.innerHTML = '✓ Codex 配置已被 Codex Assistant 修改（自动备份已完成）';
+      statusEl.style.color = 'var(--success)';
+    } else {
+      statusEl.innerHTML = '⚠ Codex 配置未被修改（由 Codex 或其他工具管理）';
+      statusEl.style.color = 'var(--warning)';
+    }
+    if (!d.backups || d.backups.length === 0) {
+      listEl.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm);padding:var(--space-3);">暂无备份</div>';
+      return;
+    }
+    listEl.innerHTML = d.backups.map(function (b) {
+      var date = new Date(b.time);
+      var dateStr = date.getFullYear() + '-' +
+        String(date.getMonth()+1).padStart(2,'0') + '-' +
+        String(date.getDate()).padStart(2,'0') + ' ' +
+        String(date.getHours()).padStart(2,'0') + ':' +
+        String(date.getMinutes()).padStart(2,'0') + ':' +
+        String(date.getSeconds()).padStart(2,'0');
+      var sizeKB = (b.size / 1024).toFixed(1);
+      var isAuto = b.name.includes('auto');
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) var(--space-3);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:var(--space-2);">' +
+        '<div>' +
+          '<div style="font-size:var(--text-sm);">' + escHtml(b.name) + (isAuto ? ' <span style="color:var(--text-muted);font-size:11px;">(自动)</span>' : '') + '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted);">' + dateStr + ' · ' + sizeKB + ' KB</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:4px;">' +
+          '<button class="btn btn-sm btn-secondary" onclick="restoreBackup(\'' + escAttr(b.name) + '\')">恢复</button>' +
+          '<button class="btn btn-sm btn-ghost" style="color:var(--error);" onclick="deleteBackup(\'' + escAttr(b.name) + '\')">删除</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    toast('加载备份列表失败: ' + e.message, 'error');
+  }
+}
+
+async function createBackup() {
+  try {
+    var result = await api('/api/codex-backup/create', 'POST');
+    if (result.success) {
+      toast('备份已创建');
+      await loadBackupList();
+    } else {
+      toast(result.error || '备份失败', 'error');
+    }
+  } catch (e) {
+    toast('备份失败: ' + e.message, 'error');
+  }
+}
+
+async function restoreBackup(name) {
+  if (!confirm('确定要恢复备份 "' + name + '" 吗？\n\n当前配置将被备份，然后恢复为备份版本。\n恢复后需要重启 Codex 才能生效。')) return;
+  try {
+    var result = await api('/api/codex-backup/restore', 'POST', { name: name });
+    if (result.success) {
+      toast(result.message || '恢复成功');
+      await loadBackupList();
+    } else {
+      toast(result.error || '恢复失败', 'error');
+    }
+  } catch (e) {
+    toast('恢复失败: ' + e.message, 'error');
+  }
+}
+
+async function deleteBackup(name) {
+  if (!confirm('确定要删除备份 "' + name + '" 吗？')) return;
+  try {
+    var result = await api('/api/codex-backup/delete', 'POST', { name: name });
+    if (result.success) {
+      toast('备份已删除');
+      await loadBackupList();
+    } else {
+      toast(result.error || '删除失败', 'error');
+    }
+  } catch (e) {
+    toast('删除失败: ' + e.message, 'error');
   }
 }
 
