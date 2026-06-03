@@ -1,0 +1,140 @@
+#!/usr/bin/env node
+// ============================================================
+// Codex Assistant 发布打包脚本
+// 生成：便携版、NSIS安装版、MSI安装版
+// 保存位置：F:\WorkSpace\codex-assistant\dist
+// ============================================================
+
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// 读取版本号
+const versionInfo = JSON.parse(fs.readFileSync(path.join(__dirname, 'version.json'), 'utf-8'));
+const VERSION = versionInfo.version;
+
+const DIST_DIR = path.join(__dirname, 'dist');
+const RELEASE_DIR = path.join(__dirname, 'src-tauri', 'target', 'release');
+const RESOURCES_DIR = path.join(__dirname, 'src-tauri', 'resources');
+
+console.log(`\n📦 Building Codex Assistant v${VERSION}\n`);
+
+// 清理 dist 目录
+if (fs.existsSync(DIST_DIR)) {
+  fs.rmSync(DIST_DIR, { recursive: true });
+}
+fs.mkdirSync(DIST_DIR, { recursive: true });
+
+// ==================== 便携版 ====================
+console.log('📁 Creating portable package...');
+
+const portableDir = path.join(DIST_DIR, `Codex-Assistant-v${VERSION}-portable`);
+fs.mkdirSync(portableDir, { recursive: true });
+
+// 复制主程序
+fs.copyFileSync(
+  path.join(RELEASE_DIR, 'codex-assistant.exe'),
+  path.join(portableDir, 'codex-assistant.exe')
+);
+
+// 复制资源文件夹
+copyDirSync(RESOURCES_DIR, path.join(portableDir, 'resources'));
+
+// 复制其他文件
+fs.copyFileSync(path.join(__dirname, 'version.json'), path.join(portableDir, 'version.json'));
+fs.copyFileSync(path.join(__dirname, 'LICENSE'), path.join(portableDir, 'LICENSE'));
+
+// 删除不需要的文件
+const filesToDelete = ['启动.cmd', '启动.vbs', 'README-PORTABLE.txt', 'env.example', 'proxy-models.example.json', 'README.md', 'README.zh-CN.md', '启动 Codex Assistant.bat'];
+for (const file of filesToDelete) {
+  const filePath = path.join(portableDir, file);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    console.log(`  Removed: ${file}`);
+  }
+}
+
+// 创建便携版 zip
+console.log('📦 Creating portable zip...');
+execSync(
+  `powershell -NoProfile -Command "Compress-Archive -Path '${portableDir}\\*' -DestinationPath '${DIST_DIR}\\Codex-Assistant-v${VERSION}-portable.zip' -Force"`,
+  { stdio: 'ignore' }
+);
+
+console.log('✅ Portable package created\n');
+
+// ==================== 安装版 ====================
+console.log('📦 Building installer packages...');
+
+// 运行 Tauri build（生成 NSIS 和 MSI）
+try {
+  execSync('npm run tauri:build', {
+    cwd: __dirname,
+    stdio: 'inherit',
+    env: { ...process.env, TAURI_SIGNING_PRIVATE_PASSWORD: '' }
+  });
+} catch (e) {
+  console.error('❌ Tauri build failed:', e.message);
+  process.exit(1);
+}
+
+// 复制安装包到 dist 目录
+const tauriReleaseDir = path.join(RELEASE_DIR, 'bundle');
+
+// NSIS 安装包
+const nsisDir = path.join(tauriReleaseDir, 'nsis');
+if (fs.existsSync(nsisDir)) {
+  const nsisFiles = fs.readdirSync(nsisDir).filter(f => f.endsWith('.exe'));
+  for (const file of nsisFiles) {
+    const destName = file.replace('codex-assistant', `Codex-Assistant-v${VERSION}-setup`);
+    fs.copyFileSync(path.join(nsisDir, file), path.join(DIST_DIR, destName));
+    console.log(`✅ NSIS: ${destName}`);
+  }
+}
+
+// MSI 安装包
+const msiDir = path.join(tauriReleaseDir, 'msi');
+if (fs.existsSync(msiDir)) {
+  const msiFiles = fs.readdirSync(msiDir).filter(f => f.endsWith('.msi'));
+  for (const file of msiFiles) {
+    const destName = file.replace('codex-assistant', `Codex-Assistant-v${VERSION}`);
+    fs.copyFileSync(path.join(msiDir, file), path.join(DIST_DIR, destName));
+    console.log(`✅ MSI: ${destName}`);
+  }
+}
+
+// ==================== 完成 ====================
+console.log('\n' + '='.repeat(50));
+console.log(`\n✨ Release build complete!`);
+console.log(`\n📁 Output directory: ${DIST_DIR}\n`);
+
+// 列出所有文件
+const files = fs.readdirSync(DIST_DIR);
+for (const file of files) {
+  const filePath = path.join(DIST_DIR, file);
+  const stat = fs.statSync(filePath);
+  const size = (stat.size / 1024 / 1024).toFixed(2);
+  console.log(`  ${file} (${size} MB)`);
+}
+
+console.log('\n');
+
+// ==================== 辅助函数 ====================
+function copyDirSync(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}

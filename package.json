@@ -13,6 +13,7 @@
     "smoke": "./scripts/smoke.sh",
     "test": "node --test tests/protocol.test.mjs",
     "version:sync": "node sync-version.mjs",
+    "build:release": "node build-release.mjs",
     "tauri": "tauri",
     "tauri:dev": "node sync-version.mjs && tauri dev",
     "tauri:build": "node sync-version.mjs && tauri build",
