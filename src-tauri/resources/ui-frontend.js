@@ -546,28 +546,27 @@ async function loadBackupList() {
       statusEl.style.color = 'var(--warning)';
     }
     if (!d.backups || d.backups.length === 0) {
-      listEl.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm);padding:var(--space-3);">暂无备份</div>';
+      listEl.innerHTML = '<div style="color:var(--text-muted);font-size:var(--text-sm);padding:var(--space-2);">暂无备份</div>';
       return;
     }
     listEl.innerHTML = d.backups.map(function (b) {
       var date = new Date(b.time);
-      var dateStr = date.getFullYear() + '-' +
-        String(date.getMonth()+1).padStart(2,'0') + '-' +
-        String(date.getDate()).padStart(2,'0') + ' ' +
+      var dateStr = (date.getMonth()+1) + '/' + date.getDate() + ' ' +
         String(date.getHours()).padStart(2,'0') + ':' +
-        String(date.getMinutes()).padStart(2,'0') + ':' +
-        String(date.getSeconds()).padStart(2,'0');
-      var sizeKB = (b.size / 1024).toFixed(1);
+        String(date.getMinutes()).padStart(2,'0');
+      var sizeKB = (b.size / 1024).toFixed(0);
       var isAuto = b.name.includes('auto');
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) var(--space-3);border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:var(--space-2);">' +
-        '<div>' +
-          '<div style="font-size:var(--text-sm);">' + escHtml(b.name) + (isAuto ? ' <span style="color:var(--text-muted);font-size:11px;">(自动)</span>' : '') + '</div>' +
-          '<div style="font-size:11px;color:var(--text-muted);">' + dateStr + ' · ' + sizeKB + ' KB</div>' +
-        '</div>' +
-        '<div style="display:flex;gap:4px;">' +
-          '<button class="btn btn-sm btn-secondary" onclick="restoreBackup(\'' + escAttr(b.name) + '\')">恢复</button>' +
-          '<button class="btn btn-sm btn-ghost" style="color:var(--error);" onclick="deleteBackup(\'' + escAttr(b.name) + '\')">删除</button>' +
-        '</div>' +
+      var lockIcon = b.locked ? '🔒' : '';
+      var nameShort = b.name.replace('codex-backup-', '').replace('.zip', '');
+      return '<div style="display:flex;align-items:center;gap:var(--space-2);padding:4px var(--space-3);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);font-size:var(--text-sm);">' +
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escAttr(b.name) + '">' + lockIcon + ' ' + escHtml(nameShort) + (isAuto ? ' <span style="color:var(--text-muted);">自动</span>' : '') + '</span>' +
+        '<span style="color:var(--text-muted);font-size:11px;white-space:nowrap;">' + dateStr + '</span>' +
+        '<span style="color:var(--text-muted);font-size:11px;white-space:nowrap;">' + sizeKB + 'K</span>' +
+        '<button class="btn btn-xs btn-ghost" onclick="restoreBackup(\'' + escAttr(b.name) + '\')" title="恢复">↩</button>' +
+        '<button class="btn btn-xs btn-ghost" onclick="toggleLockBackup(\'' + escAttr(b.name) + '\',' + !b.locked + ')" title="' + (b.locked ? '解锁' : '锁定') + '">' + (b.locked ? '🔓' : '🔒') + '</button>' +
+        '<button class="btn btn-xs btn-ghost" onclick="renameBackup(\'' + escAttr(b.name) + '\')" title="重命名">✎</button>' +
+        '<button class="btn btn-xs btn-ghost" onclick="openBackupFolder()" title="打开文件夹">📁</button>' +
+        (b.locked ? '' : '<button class="btn btn-xs btn-ghost" style="color:var(--error);" onclick="deleteBackup(\'' + escAttr(b.name) + '\')" title="删除">🗑</button>') +
       '</div>';
     }).join('');
   } catch (e) {
@@ -617,6 +616,45 @@ async function deleteBackup(name) {
   } catch (e) {
     toast('删除失败: ' + e.message, 'error');
   }
+}
+
+async function toggleLockBackup(name, locked) {
+  try {
+    var result = await api('/api/codex-backup/lock', 'POST', { name: name, locked: locked });
+    if (result.success) {
+      toast(locked ? '备份已锁定' : '备份已解锁');
+      await loadBackupList();
+    } else {
+      toast(result.error || '操作失败', 'error');
+    }
+  } catch (e) {
+    toast('操作失败: ' + e.message, 'error');
+  }
+}
+
+async function renameBackup(name) {
+  var newName = prompt('输入新的备份名称（不含 .zip 后缀）：', name.replace('codex-backup-', '').replace('.zip', ''));
+  if (!newName || newName === name.replace('codex-backup-', '').replace('.zip', '')) return;
+  var fullName = 'codex-backup-' + newName + '.zip';
+  try {
+    var result = await api('/api/codex-backup/rename', 'POST', { name: name, newName: fullName });
+    if (result.success) {
+      toast('重命名成功');
+      await loadBackupList();
+    } else {
+      toast(result.error || '重命名失败', 'error');
+    }
+  } catch (e) {
+    toast('重命名失败: ' + e.message, 'error');
+  }
+}
+
+function openBackupFolder() {
+  api('/api/codex-backup/list').then(function (d) {
+    if (d.backupDir) {
+      api('/api/open-url', 'POST', { url: d.backupDir });
+    }
+  });
 }
 
 // ==================== Codex++ manual path config ====================

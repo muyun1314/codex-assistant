@@ -1438,7 +1438,8 @@ type = "openai-compatible"
         .sort().reverse()
         .map(f => {
           const stat = fs.statSync(path.join(backupDir, f));
-          return { name: f, size: stat.size, time: stat.mtime };
+          const locked = fs.existsSync(path.join(backupDir, f + '.locked'));
+          return { name: f, size: stat.size, time: stat.mtime, locked };
         });
       // Check if config has Codex Assistant marker
       const configPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
@@ -1510,7 +1511,48 @@ type = "openai-compatible"
       const backupDir = getCodexBackupDir();
       const zipPath = path.join(backupDir, name);
       if (!name || !fs.existsSync(zipPath)) return sendJson(res, 404, { success: false, error: '备份文件不存在' });
+      // Check if locked
+      const lockPath = zipPath + '.locked';
+      if (fs.existsSync(lockPath)) return sendJson(res, 403, { success: false, error: '备份已锁定，请先解锁后再删除' });
       fs.unlinkSync(zipPath);
+      return sendJson(res, 200, { success: true });
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
+  }
+
+  // API: 锁定/解锁备份
+  if (pathname === '/api/codex-backup/lock' && method === 'POST') {
+    try {
+      const body = await collectBody(req);
+      const { name, locked } = JSON.parse(body || '{}');
+      const backupDir = getCodexBackupDir();
+      const zipPath = path.join(backupDir, name);
+      if (!name || !fs.existsSync(zipPath)) return sendJson(res, 404, { success: false, error: '备份文件不存在' });
+      const lockPath = zipPath + '.locked';
+      if (locked) {
+        fs.writeFileSync(lockPath, '', 'utf8');
+      } else {
+        if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+      }
+      return sendJson(res, 200, { success: true });
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
+  }
+
+  // API: 重命名备份
+  if (pathname === '/api/codex-backup/rename' && method === 'POST') {
+    try {
+      const body = await collectBody(req);
+      const { name, newName } = JSON.parse(body || '{}');
+      const backupDir = getCodexBackupDir();
+      const oldPath = path.join(backupDir, name);
+      const newPath = path.join(backupDir, newName);
+      if (!name || !fs.existsSync(oldPath)) return sendJson(res, 404, { success: false, error: '备份文件不存在' });
+      if (!newName || newName.endsWith('/')) return sendJson(res, 400, { success: false, error: '请输入有效的新文件名' });
+      if (fs.existsSync(newPath)) return sendJson(res, 409, { success: false, error: '目标文件名已存在' });
+      fs.renameSync(oldPath, newPath);
+      // Also rename lock file if exists
+      const oldLock = oldPath + '.locked';
+      const newLock = newPath + '.locked';
+      if (fs.existsSync(oldLock)) fs.renameSync(oldLock, newLock);
       return sendJson(res, 200, { success: true });
     } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
