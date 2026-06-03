@@ -88,6 +88,17 @@ LOG_LEVEL=info
 // 启动时初始化
 initUserDir();
 
+// 备份文件名时间戳格式: YYYY-MM-DD-HH-MM-SS
+function backupTimestamp() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0') + '-' +
+    String(d.getHours()).padStart(2, '0') + '-' +
+    String(d.getMinutes()).padStart(2, '0') + '-' +
+    String(d.getSeconds()).padStart(2, '0');
+}
+
 // 自动备份 Codex 配置（首次启动或配置被外部修改时）
 function autoBackupCodexConfig() {
   try {
@@ -103,8 +114,7 @@ function autoBackupCodexConfig() {
       : path.join(PROJECT_DIR, 'backup');
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const zipName = `codex-backup-auto-${timestamp}.zip`;
+    const zipName = `codex-backup-auto-${backupTimestamp()}.zip`;
     const zipPath = path.join(backupDir, zipName);
 
     const tempDir = path.join(os.tmpdir(), 'codex-auto-backup-' + Date.now());
@@ -1199,6 +1209,20 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // API: 打开文件夹
+  if (pathname === '/api/open-folder' && method === 'POST') {
+    try {
+      var body = await collectBody(req);
+      var data = JSON.parse(body || '{}');
+      var folderPath = data.path || '';
+      if (!folderPath) return sendJson(res, 400, { success: false, error: 'path is required' });
+      exec('explorer "' + folderPath.replace(/"/g, '\\"') + '"', { shell: true });
+      return sendJson(res, 200, { success: true });
+    } catch (e) {
+      return sendJson(res, 500, { success: false, error: e.message });
+    }
+  }
+
   // API: 状态
   if (pathname === '/api/status' && method === 'GET') {
     const env = readEnv();
@@ -1386,8 +1410,7 @@ type = "openai-compatible"
 
   function backupCodexFiles(label) {
     const backupDir = getCodexBackupDir();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const zipName = `codex-backup-${label || timestamp}.zip`;
+    const zipName = `codex-backup-${label || backupTimestamp()}.zip`;
     const zipPath = path.join(backupDir, zipName);
 
     const filesToBackup = [];
@@ -1469,7 +1492,7 @@ type = "openai-compatible"
       if (!fs.existsSync(zipPath)) return sendJson(res, 404, { success: false, error: '备份文件不存在' });
 
       // Backup current config before restoring
-      backupCodexFiles('pre-restore-' + Date.now());
+      backupCodexFiles('pre-restore-' + backupTimestamp());
 
       // Extract zip to temp and copy files
       const tempDir = path.join(os.tmpdir(), 'codex-restore-' + Date.now());

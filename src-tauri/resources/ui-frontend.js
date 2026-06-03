@@ -652,7 +652,7 @@ async function renameBackup(name) {
 function openBackupFolder() {
   api('/api/codex-backup/list').then(function (d) {
     if (d.backupDir) {
-      api('/api/open-url', 'POST', { url: d.backupDir });
+      api('/api/open-folder', 'POST', { path: d.backupDir });
     }
   });
 }
