@@ -22,11 +22,12 @@ const RESOURCES_DIR = path.join(__dirname, 'src-tauri', 'resources');
 
 console.log(`\n📦 Building Codex Assistant v${VERSION}\n`);
 
-// 清理 dist 目录
+// 清理 dist 目录（完全删除并重建）
 if (fs.existsSync(DIST_DIR)) {
   fs.rmSync(DIST_DIR, { recursive: true });
 }
 fs.mkdirSync(DIST_DIR, { recursive: true });
+console.log('🗑️  Cleaned dist directory\n');
 
 // ==================== 便携版 ====================
 console.log('📁 Creating portable package...');
@@ -87,9 +88,9 @@ const tauriReleaseDir = path.join(RELEASE_DIR, 'bundle');
 // NSIS 安装包
 const nsisDir = path.join(tauriReleaseDir, 'nsis');
 if (fs.existsSync(nsisDir)) {
-  const nsisFiles = fs.readdirSync(nsisDir).filter(f => f.endsWith('.exe'));
+  const nsisFiles = fs.readdirSync(nsisDir).filter(f => f.endsWith('.exe') && f.includes(VERSION));
   for (const file of nsisFiles) {
-    const destName = file.replace('codex-assistant', `Codex-Assistant-v${VERSION}-setup`);
+    const destName = `Codex-Assistant-v${VERSION}-setup.exe`;
     fs.copyFileSync(path.join(nsisDir, file), path.join(DIST_DIR, destName));
     console.log(`✅ NSIS: ${destName}`);
   }
@@ -98,9 +99,9 @@ if (fs.existsSync(nsisDir)) {
 // MSI 安装包
 const msiDir = path.join(tauriReleaseDir, 'msi');
 if (fs.existsSync(msiDir)) {
-  const msiFiles = fs.readdirSync(msiDir).filter(f => f.endsWith('.msi'));
+  const msiFiles = fs.readdirSync(msiDir).filter(f => f.endsWith('.msi') && f.includes(VERSION));
   for (const file of msiFiles) {
-    const destName = file.replace('codex-assistant', `Codex-Assistant-v${VERSION}`);
+    const destName = `Codex-Assistant-v${VERSION}.msi`;
     fs.copyFileSync(path.join(msiDir, file), path.join(DIST_DIR, destName));
     console.log(`✅ MSI: ${destName}`);
   }
