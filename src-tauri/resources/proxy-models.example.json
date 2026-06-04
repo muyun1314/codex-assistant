@@ -1,0 +1,108 @@
+{
+  "_comment": "Example model catalog for Codex Assistant. Copy to ~/.codex/proxy-models.json (or any path) and point both Codex (config.toml -> model_catalog_json) and Codex Assistant (.env -> MODEL_CATALOG_PATH) at it. The proxy infers the upstream provider from each slug prefix (deepseek-* / mimo-* / gpt-*).",
+
+  "_field_reference": {
+    "slug":                          "Model identifier sent by Codex CLI. The proxy uses the prefix (deepseek-* / mimo-* / gpt-*) to route to the correct upstream provider.",
+    "display_name":                  "Human-readable name shown in the Codex CLI model picker.",
+    "supported_reasoning_levels":    "Array of { effort, description } objects. 'effort' is one of: none | minimal | low | medium | high | xhigh. Codex maps the user's reasoning-effort slider to these values; the proxy then translates them to each provider's native format (see README → Reasoning Effort Translation).",
+    "shell_type":                    "Shell environment for Codex CLI sandbox. 'default' uses the system shell.",
+    "visibility":                    "'list' = shown in model picker; 'hidden' = available but not listed.",
+    "supported_in_api":              "true = the model can be called via the API. Set false to list-only (informational).",
+    "priority":                      "Sort order in the model picker. Lower number = higher priority (shown first).",
+    "base_instructions":             "Optional system-prompt prefix injected by Codex for this model. Leave empty for default behavior.",
+    "supports_reasoning_summaries":  "Whether the model returns summarized reasoning steps (currently only some OpenAI models).",
+    "support_verbosity":             "Whether Codex should send verbosity hints to this model.",
+    "truncation_policy":             "Context-window truncation strategy. 'mode' is 'tokens'; 'limit' is the max token count before Codex truncates older messages.",
+    "supports_parallel_tool_calls":  "true = Codex may issue multiple tool calls in a single turn for this model.",
+    "experimental_supported_tools":  "Array of experimental tool identifiers this model opts into. Usually empty."
+  },
+
+  "models": [
+    {
+      "slug": "mimo-v2.5-pro",
+      "display_name": "MiMo v2.5 Pro",
+      "supported_reasoning_levels": [
+        { "effort": "none",    "description": "Thinking disabled" },
+        { "effort": "minimal", "description": "Minimal reasoning (mapped to low)" },
+        { "effort": "low",     "description": "Low reasoning effort" },
+        { "effort": "medium",  "description": "Medium reasoning effort" },
+        { "effort": "high",    "description": "High reasoning effort" }
+      ],
+      "shell_type": "default",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 1,
+      "base_instructions": "",
+      "supports_reasoning_summaries": false,
+      "support_verbosity": false,
+      "truncation_policy": { "mode": "tokens", "limit": 204800 },
+      "supports_parallel_tool_calls": true,
+      "experimental_supported_tools": []
+    },
+    {
+      "slug": "mimo-v2.5",
+      "display_name": "MiMo v2.5",
+      "supported_reasoning_levels": [
+        { "effort": "none",    "description": "Thinking disabled" },
+        { "effort": "minimal", "description": "Minimal reasoning (mapped to low)" },
+        { "effort": "low",     "description": "Low reasoning effort" },
+        { "effort": "medium",  "description": "Medium reasoning effort" },
+        { "effort": "high",    "description": "High reasoning effort" }
+      ],
+      "shell_type": "default",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 2,
+      "base_instructions": "",
+      "supports_reasoning_summaries": false,
+      "support_verbosity": false,
+      "truncation_policy": { "mode": "tokens", "limit": 204800 },
+      "supports_parallel_tool_calls": true,
+      "experimental_supported_tools": []
+    },
+    {
+      "slug": "deepseek-v4-pro",
+      "display_name": "DeepSeek v4 Pro",
+      "supported_reasoning_levels": [
+        { "effort": "none",    "description": "Thinking disabled" },
+        { "effort": "minimal", "description": "Minimal reasoning (mapped to low)" },
+        { "effort": "low",     "description": "Low reasoning effort" },
+        { "effort": "medium",  "description": "Medium reasoning effort" },
+        { "effort": "high",    "description": "High reasoning effort" },
+        { "effort": "xhigh",   "description": "Extra-high reasoning effort" }
+      ],
+      "shell_type": "default",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 3,
+      "base_instructions": "",
+      "supports_reasoning_summaries": false,
+      "support_verbosity": false,
+      "truncation_policy": { "mode": "tokens", "limit": 204800 },
+      "supports_parallel_tool_calls": true,
+      "experimental_supported_tools": []
+    },
+    {
+      "slug": "deepseek-v4-flash",
+      "display_name": "DeepSeek v4 Flash",
+      "supported_reasoning_levels": [
+        { "effort": "none",    "description": "Thinking disabled" },
+        { "effort": "minimal", "description": "Minimal reasoning (mapped to low)" },
+        { "effort": "low",     "description": "Low reasoning effort" },
+        { "effort": "medium",  "description": "Medium reasoning effort" },
+        { "effort": "high",    "description": "High reasoning effort" },
+        { "effort": "xhigh",   "description": "Extra-high reasoning effort" }
+      ],
+      "shell_type": "default",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 4,
+      "base_instructions": "",
+      "supports_reasoning_summaries": false,
+      "support_verbosity": false,
+      "truncation_policy": { "mode": "tokens", "limit": 204800 },
+      "supports_parallel_tool_calls": true,
+      "experimental_supported_tools": []
+    }
+  ]
+}
