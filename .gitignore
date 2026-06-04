@@ -22,3 +22,6 @@ dev.cmd
 .code-review/
 CHANGELOG-*.md
 build-portable.bat
+logo/
+启动codex-assistant.cmd
+启动开发版.cmd
