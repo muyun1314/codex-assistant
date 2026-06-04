@@ -29,48 +29,10 @@ if (fs.existsSync(DIST_DIR)) {
 fs.mkdirSync(DIST_DIR, { recursive: true });
 console.log('🗑️  Cleaned dist directory\n');
 
-// ==================== 便携版 ====================
-console.log('📁 Creating portable package...');
-
-const portableDir = path.join(DIST_DIR, `Codex-Assistant-v${VERSION}-portable`);
-fs.mkdirSync(portableDir, { recursive: true });
-
-// 复制主程序
-fs.copyFileSync(
-  path.join(RELEASE_DIR, 'codex-assistant.exe'),
-  path.join(portableDir, 'codex-assistant.exe')
-);
-
-// 复制资源文件夹
-copyDirSync(RESOURCES_DIR, path.join(portableDir, 'resources'));
-
-// 复制其他文件
-fs.copyFileSync(path.join(__dirname, 'version.json'), path.join(portableDir, 'version.json'));
-fs.copyFileSync(path.join(__dirname, 'LICENSE'), path.join(portableDir, 'LICENSE'));
-
-// 删除不需要的文件
-const filesToDelete = ['启动.cmd', '启动.vbs', 'README-PORTABLE.txt', 'env.example', 'proxy-models.example.json', 'README.md', 'README.zh-CN.md', '启动 Codex Assistant.bat'];
-for (const file of filesToDelete) {
-  const filePath = path.join(portableDir, file);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-    console.log(`  Removed: ${file}`);
-  }
-}
-
-// 创建便携版 zip
-console.log('📦 Creating portable zip...');
-execSync(
-  `powershell -NoProfile -Command "Compress-Archive -Path '${portableDir}\\*' -DestinationPath '${DIST_DIR}\\Codex-Assistant-v${VERSION}-portable.zip' -Force"`,
-  { stdio: 'ignore' }
-);
-
-console.log('✅ Portable package created\n');
-
 // ==================== 安装版 ====================
-console.log('📦 Building installer packages...');
+// 先进行 Tauri release build（耗时较长，生成 NSIS + MSI）
+console.log('📦 Building installer packages (Tauri release build)...\n');
 
-// 运行 Tauri build（生成 NSIS 和 MSI）
 try {
   execSync('npm run tauri:build', {
     cwd: __dirname,
@@ -94,6 +56,8 @@ if (fs.existsSync(nsisDir)) {
     fs.copyFileSync(path.join(nsisDir, file), path.join(DIST_DIR, destName));
     console.log(`✅ NSIS: ${destName}`);
   }
+} else {
+  console.warn('⚠️  NSIS dir not found, skipping installer package');
 }
 
 // MSI 安装包
@@ -105,10 +69,59 @@ if (fs.existsSync(msiDir)) {
     fs.copyFileSync(path.join(msiDir, file), path.join(DIST_DIR, destName));
     console.log(`✅ MSI: ${destName}`);
   }
+} else {
+  console.warn('⚠️  MSI dir not found, skipping MSI package');
 }
 
+console.log('');
+
+// ==================== 便携版 ====================
+console.log('📁 Creating portable package...');
+
+const releaseExe = path.join(RELEASE_DIR, 'codex-assistant.exe');
+if (!fs.existsSync(releaseExe)) {
+  console.error('❌ Release exe not found:', releaseExe);
+  process.exit(1);
+}
+
+const portableDir = path.join(DIST_DIR, `Codex-Assistant-v${VERSION}-portable`);
+fs.mkdirSync(portableDir, { recursive: true });
+
+// 复制主程序
+fs.copyFileSync(releaseExe, path.join(portableDir, 'codex-assistant.exe'));
+console.log('  Copied: codex-assistant.exe');
+
+// 复制资源文件夹（排除 node 二进制，太大了）
+const resourceDest = path.join(portableDir, 'resources');
+if (!fs.existsSync(resourceDest)) fs.mkdirSync(resourceDest, { recursive: true });
+const resourceEntries = fs.readdirSync(RESOURCES_DIR, { withFileTypes: true });
+for (const entry of resourceEntries) {
+  if (entry.name === 'node') continue; // node.exe 已嵌入 Tauri bundle
+  const srcPath = path.join(RESOURCES_DIR, entry.name);
+  const destPath = path.join(resourceDest, entry.name);
+  if (entry.isDirectory()) {
+    copyDirSync(srcPath, destPath);
+  } else {
+    fs.copyFileSync(srcPath, destPath);
+  }
+}
+console.log('  Copied: resources/');
+
+// 复制版本和许可证文件
+fs.copyFileSync(path.join(__dirname, 'version.json'), path.join(portableDir, 'version.json'));
+fs.copyFileSync(path.join(__dirname, 'LICENSE'), path.join(portableDir, 'LICENSE'));
+
+// 创建便携版 zip
+console.log('📦 Creating portable zip...');
+execSync(
+  `powershell -NoProfile -Command "Compress-Archive -Path '${portableDir}\\*' -DestinationPath '${DIST_DIR}\\Codex-Assistant-v${VERSION}-portable.zip' -Force"`,
+  { stdio: 'ignore' }
+);
+
+console.log('✅ Portable package created\n');
+
 // ==================== 完成 ====================
-console.log('\n' + '='.repeat(50));
+console.log('='.repeat(50));
 console.log(`\n✨ Release build complete!`);
 console.log(`\n📁 Output directory: ${DIST_DIR}\n`);
 
