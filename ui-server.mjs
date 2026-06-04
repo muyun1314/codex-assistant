@@ -184,6 +184,32 @@ function autoBackupCodexConfig() {
 }
 autoBackupCodexConfig();
 
+// 从 Codex auth.json 初始化 PROXY_AUTH_KEY（如果尚未配置）
+function initProxyAuthKey() {
+  try {
+    const env = readEnv();
+    if (env.PROXY_AUTH_KEY) return; // 已配置，跳过
+
+    const auth = readCodexAuth();
+    const codexKey = auth.OPENAI_API_KEY || '';
+    if (codexKey) {
+      // 从 Codex 读取 API Key 作为 PROXY_AUTH_KEY
+      env.PROXY_AUTH_KEY = codexKey;
+      writeEnv(env);
+      console.log('[ui] Initialized PROXY_AUTH_KEY from Codex auth.json');
+    } else {
+      // Codex 也没有配置，自动生成随机 key
+      const newKey = 'sk-' + crypto.randomBytes(24).toString('hex');
+      env.PROXY_AUTH_KEY = newKey;
+      writeEnv(env);
+      console.log('[ui] Auto-generated PROXY_AUTH_KEY');
+    }
+  } catch (e) {
+    console.error('[ui] Failed to init PROXY_AUTH_KEY:', e.message);
+  }
+}
+initProxyAuthKey();
+
 // ==================== .env 读写（只保留真正全局的变量）====================
 // GLOBAL_ENV_KEYS defines the allowed keys for .env (non-provider settings).
 // Provider API keys now live exclusively in provider-configs.json (encrypted).
@@ -550,13 +576,20 @@ async function syncCodexConfig() {
   const codexConfig = readCodexConfig();
   const parsed = parseToml(codexConfig);
 
-  // 1. 同步 PROXY_AUTH_KEY 到 Codex auth.json
+  // 1. 同步访问密钥（双向同步，Codex 优先）
   const proxyKey = env.PROXY_AUTH_KEY || '';
   const codexKey = auth.OPENAI_API_KEY || '';
-  if (proxyKey && proxyKey !== codexKey) {
+
+  if (codexKey && codexKey !== proxyKey) {
+    // Codex 有配置，同步到 Codex Assistant
+    env.PROXY_AUTH_KEY = codexKey;
+    writeEnv(env);
+    syncResults.push('已从 Codex 同步访问密钥');
+  } else if (proxyKey && proxyKey !== codexKey) {
+    // Codex Assistant 有配置，同步到 Codex
     auth.OPENAI_API_KEY = proxyKey;
     writeCodexAuth(auth);
-    syncResults.push('已同步 PROXY_AUTH_KEY 到 Codex auth.json');
+    syncResults.push('已同步访问密钥到 Codex');
   }
 
   // 2. 同步端口到 Codex config.toml

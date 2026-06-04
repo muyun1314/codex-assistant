@@ -1181,7 +1181,7 @@ function importConfig() {
 var ENV_CONFIG = {
   basic: [
     { key: 'PROXY_PORT', label: '代理端口', type: 'number', placeholder: '4000', desc: '代理监听端口，Codex 需连接此端口' },
-    { key: 'PROXY_AUTH_KEY', label: '访问密钥', type: 'text', placeholder: '留空则不限制访问', desc: '代理访问密钥，Codex 需填写相同密钥', hasRefresh: true, hasSync: true },
+    { key: 'PROXY_AUTH_KEY', label: '访问密钥', type: 'text', placeholder: '留空则不限制访问', desc: '首次启动自动从 Codex 读取，双向同步；用于加密存储提供商 API Key', hasRefresh: true, hasSync: true },
     { key: 'DEFAULT_PROVIDER', label: '默认提供商', type: 'select-provider', desc: '未指定模型时使用哪个提供商和模型' }
   ],
   advanced: [
