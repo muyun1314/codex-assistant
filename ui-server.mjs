@@ -1328,6 +1328,14 @@ const server = http.createServer(async (req, res) => {
     } else { res.writeHead(404); res.end(); }
     return;
   }
+  if (pathname === '/ui-favicon.png') {
+    const fp = path.join(PROJECT_DIR, 'ui-favicon.png');
+    if (fs.existsSync(fp)) {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(fs.readFileSync(fp));
+    } else { res.writeHead(404); res.end(); }
+    return;
+  }
 
   // API: 打开外部链接
   if (pathname === '/api/open-url' && method === 'POST') {
