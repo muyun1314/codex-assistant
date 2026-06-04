@@ -1,6 +1,6 @@
 {
-  "version": "1.2.4",
+  "version": "1.2.5",
   "build": 1,
-  "releasedAt": "2026-06-03",
+  "releasedAt": "2026-06-04",
   "changelog": "Codex配置备份与恢复、环境配置UI优化"
 }

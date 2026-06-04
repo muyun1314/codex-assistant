@@ -1,7 +1,7 @@
 {
-  "version": "1.2.4",
+  "version": "1.2.5",
   "build": 1,
-  "releasedAt": "2026-06-03",
-  "changelog": "配置管理优化、UI改进、Bug修复"
+  "releasedAt": "2026-06-04",
+  "changelog": "Logo统一、自动备份优化、访问密钥同步改进"
 }
 
