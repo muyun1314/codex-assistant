@@ -110,16 +110,6 @@ function autoBackupCodexConfig() {
       console.log('[backup] Config file not found:', configPath);
       return;
     }
-    const content = fs.readFileSync(configPath, 'utf8');
-
-    // 检查是否已被 Codex Assistant 修改过（新旧两种标记）
-    const hasNewMarker = content.startsWith(CODEX_MARKER);
-    const hasOldMarker = content.startsWith('# Codex 配置 - 由 Codex Assistant UI 自动生成');
-    const hasDivider = content.includes(CODEX_DIVIDER);
-    if (hasNewMarker || hasOldMarker || hasDivider) {
-      console.log('[backup] Config already modified by Codex Assistant, skipping backup');
-      return; // 已备份过，跳过
-    }
 
     // 未标记 = 首次使用或被外部修改，执行备份
     const backupDir = IS_INSTALLED
@@ -129,6 +119,14 @@ function autoBackupCodexConfig() {
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
       console.log('[backup] Created backup directory');
+    }
+
+    // 检查是否已经有原始配置备份
+    const existingBackups = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith('原始配置自动备份-') && f.endsWith('.zip'));
+    if (existingBackups.length > 0) {
+      console.log('[backup] Original config backup already exists, skipping');
+      return; // 已有备份，跳过
     }
 
     // 使用本地时间命名，格式：原始配置自动备份-YYYY-MM-DD-HH-MM-SS
