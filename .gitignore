@@ -19,3 +19,6 @@ _codex-snapshot/
 set-codex-chinese.cmd
 zh-CN.pak
 dev.cmd
+.code-review/
+CHANGELOG-*.md
+build-portable.bat
