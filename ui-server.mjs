@@ -1940,7 +1940,15 @@ const server = http.createServer(async (req, res) => {
       if (fs.existsSync(CODEXPP_CONFIG_FILE)) {
         codexppCfg = JSON.parse(fs.readFileSync(CODEXPP_CONFIG_FILE, 'utf-8'));
       }
-      // 不再在此接口做自动检测（会阻塞其他请求），由独立端点 /api/codex/check-plusplus 处理
+      // 如果手动配置中没有路径，尝试自动检测
+      if (!codexppCfg.codexppPath) {
+        var detectedPath = getCodexPlusPlusPath();
+        if (detectedPath) codexppCfg.codexppPath = detectedPath;
+      }
+      if (!codexppCfg.codexppMgrPath) {
+        var detectedMgrPath = getCodexPlusPlusManagerPath();
+        if (detectedMgrPath) codexppCfg.codexppMgrPath = detectedMgrPath;
+      }
       return sendJson(res, 200, codexppCfg);
     } catch (e) { return sendJson(res, 500, { error: e.message }); }
   }
