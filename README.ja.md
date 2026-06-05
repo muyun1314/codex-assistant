@@ -41,7 +41,7 @@ Codex Assistant は両者を双方向に変換します — ストリーミン�
 ### 1. 設定
 
 ```bash
-git clone https://github.com/wujfeng712-ui/Codex Assistant.git
+git clone https://github.com/muyun1314/Codex Assistant.git
 cd Codex Assistant
 cp env.example .env
 ```

@@ -217,16 +217,30 @@ export async function fetchModelsFromAPI(baseUrl, apiKey) {
         }
       }
 
+      // 401 means bad API key — don't bother trying fallback endpoints
+      if (statusCode === 401) {
+        var authMsg = 'API Key 无效，请检查是否正确填写。';
+        try {
+          var errJson = JSON.parse(body);
+          if (errJson.error && errJson.error.message) {
+            authMsg = 'API Key 无效：' + errJson.error.message;
+          }
+        } catch (_) {}
+        throw new Error(authMsg + '\n请求地址: ' + url);
+      }
+
       const preview = body.substring(0, 150).replace(/[\n\r]/g, ' ');
       errors.push(url + ' -> HTTP ' + statusCode + ': ' + preview);
     } catch (e) {
+      // Re-throw auth errors immediately
+      if (e.message.indexOf('API Key') !== -1) throw e;
       errors.push(url + ' -> ' + e.message);
     }
   }
 
   throw new Error(
-    'Unable to fetch model list (provider may not support /v1/models endpoint).\n' +
-    'Endpoints tried:\n' + errors.map(e => '  \u2022 ' + e).join('\n') + '\n' +
-    '\nSolution: manually add model IDs in the "Model List" area.'
+    '无法获取模型列表（服务商可能不支持 /v1/models 端点）。\n' +
+    '已尝试的地址:\n' + errors.map(e => '  \u2022 ' + e).join('\n') + '\n' +
+    '\n解决方法：在"模型列表"区域手动添加模型 ID。'
   );
 }

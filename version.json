@@ -1,7 +1,6 @@
 {
-  "version": "1.2.6",
+  "version": "1.2.8",
   "build": 1,
   "releasedAt": "2026-06-05",
-  "changelog": "备份模块UI重设计、自动备份哈希去重、检查更新面板、Logo优化、上下文配置修复"
+  "changelog": "API Key加密改用机器码、ui-frontend.js模块化拆分、暗黑主题、deepseek-v4-pro 1M上下文、版本检查浏览器直连、代码审查与Bug修复"
 }
-

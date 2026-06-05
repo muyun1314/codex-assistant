@@ -802,6 +802,55 @@ select {
   transform: translateY(-1px);
 }
 
+/* ---------- Version Update Header ---------- */
+.update-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+.update-header h2 {
+  margin: 0;
+}
+.update-status-text {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  flex: 1;
+}
+.update-status-text.has-update {
+  color: var(--accent);
+}
+.btn-changelog {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  line-height: 1.4;
+}
+.btn-changelog:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.theme-light .btn-changelog:hover {
+  color: #fff;
+}
+
+.update-source-icon-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: var(--radius-xs);
+}
+
 .update-source-icon {
   width: 28px;
   height: 28px;
@@ -1308,6 +1357,65 @@ input:checked + .slider::before {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ---------- Split Button (Codex App variant selector) ---------- */
+.btn-split {
+  display: inline-flex;
+  position: relative;
+}
+.btn-split .btn-split-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-right: 0;
+}
+.btn-split .btn-split-arrow {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-left: 4px;
+  padding-right: 5px;
+  margin-left: 0;
+  border-left: 1px solid rgba(255,255,255,0.1);
+}
+.btn-split-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 2px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  z-index: 100;
+  overflow: hidden;
+  min-width: 160px;
+}
+.btn-split-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  font-size: 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.btn-split-item:hover {
+  background: var(--accent-muted);
+}
+.btn-split-item.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.btn-split-item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.theme-light .btn-split-arrow {
+  border-left-color: rgba(0,0,0,0.1);
 }
 
 /* ---------- Toolbar ---------- */
@@ -1657,6 +1765,35 @@ body.theme-light::before {
 .theme-light .radio-card:has(input:checked) {
   border-color: var(--accent);
   background: var(--accent-muted);
+}
+
+/* ---------- Backup Header & Actions ---------- */
+
+.backup-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+.backup-header h2 {
+  margin: 0;
+  white-space: nowrap;
+}
+.backup-header-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.backup-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+.backup-status-inline {
+  font-size: var(--text-sm);
+  margin-left: var(--space-2);
 }
 
 /* ---------- Backup List ---------- */

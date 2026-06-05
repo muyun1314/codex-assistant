@@ -4,7 +4,16 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+
+// Workaround: Node.js bundled with Tauri may lack system CA certificates
+// This allows the updater to download over HTTPS. The browser (WebView) handles
+// cert validation independently and is not affected.
+if (!process.env.NODE_TLS_REJECT_UNAUTHORIZED) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
 import { spawn, exec, execFile, execSync, execFileSync } from 'child_process';
+import { promisify } from 'util';
+const execFileAsync = promisify(execFile);
 import { fileURLToPath } from 'url';
 import {
   stripEndpointSuffix, normalizeModelsUrl, buildModelCandidateUrls,
@@ -12,7 +21,7 @@ import {
 } from './src/shared.mjs';
 import {
   isEncrypted, encryptApiKeyWithPrefix, tryDecryptApiKey,
-  migrateToEncrypted
+  migrateToEncrypted, getMachineKey, migrateProvidersToMachineKey
 } from './src/crypto-store.mjs';
 
 var UI_PORT = parseInt(process.env.UI_PORT, 10) || 8788;
@@ -195,31 +204,74 @@ function autoBackupCodexConfig() {
 }
 autoBackupCodexConfig();
 
-// 从 Codex auth.json 初始化 PROXY_AUTH_KEY（如果尚未配置）
+// 从 Codex auth.json 初始化 PROXY_AUTH_KEY（auth.json 为唯一权威源）
 function initProxyAuthKey() {
   try {
     const env = readEnv();
-    if (env.PROXY_AUTH_KEY) return; // 已配置，跳过
-
     const auth = readCodexAuth();
     const codexKey = auth.OPENAI_API_KEY || '';
-    if (codexKey) {
-      // 从 Codex 读取 API Key 作为 PROXY_AUTH_KEY
+
+    if (codexKey && codexKey !== env.PROXY_AUTH_KEY) {
+      // auth.json 有密钥，且与 .env 不一致 → 以 auth.json 为准覆盖
       env.PROXY_AUTH_KEY = codexKey;
       writeEnv(env);
-      console.log('[ui] Initialized PROXY_AUTH_KEY from Codex auth.json');
-    } else {
-      // Codex 也没有配置，自动生成随机 key
-      const newKey = 'sk-' + crypto.randomBytes(24).toString('hex');
-      env.PROXY_AUTH_KEY = newKey;
-      writeEnv(env);
-      console.log('[ui] Auto-generated PROXY_AUTH_KEY');
+      console.log('[ui] Synced PROXY_AUTH_KEY from Codex auth.json');
     }
+    // auth.json 无密钥时保持 .env 现有值不动
+    // 不再自动生成随机密钥 — 用户需通过「随机刷新」按钮手动生成
   } catch (e) {
     console.error('[ui] Failed to init PROXY_AUTH_KEY:', e.message);
   }
 }
 initProxyAuthKey();
+
+// 工厂启动时自动将旧的 PROXY_AUTH_KEY 加密的 provider 密钥迁移到机器码加密
+function migrateToMachineKeyIfNeeded() {
+  try {
+    if (!fs.existsSync(PROVIDERS_FILE)) return;
+    
+    var machineKey = getMachineKey();
+    if (!machineKey) {
+      console.log('[ui] Migration: machine key unavailable, skipping');
+      return;
+    }
+    
+    var data = JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf8'));
+    if (!data.providers || data.providers.length === 0) return;
+    
+    // Check if already using machine key
+    var firstEncrypted = data.providers.find(function(p) {
+      return p.api_key && isEncrypted(p.api_key);
+    });
+    if (firstEncrypted) {
+      var testResult = tryDecryptApiKey(firstEncrypted.api_key, machineKey);
+      if (testResult.key !== null) {
+        // Already using machine key, no migration needed
+        return;
+      }
+    }
+    
+    // Try to migrate using the old PROXY_AUTH_KEY
+    var env = readEnv();
+    var oldMasterKey = (env.PROXY_AUTH_KEY || '').trim();
+    if (!oldMasterKey) {
+      console.log('[ui] Migration: no legacy master key available');
+      return;
+    }
+    
+    var result = migrateProvidersToMachineKey(data.providers, oldMasterKey);
+    if (result.migrated > 0) {
+      fs.writeFileSync(PROVIDERS_FILE, JSON.stringify({ providers: result.providers }, null, 2));
+      console.log('[ui] Migration: re-encrypted ' + result.migrated + ' providers to machine key');
+    }
+    if (result.failed > 0) {
+      console.log('[ui] Migration: ' + result.failed + ' providers could not be migrated (keys may need manual re-entry)');
+    }
+  } catch (e) {
+    console.error('[ui] Migration error:', e.message);
+  }
+}
+migrateToMachineKeyIfNeeded();
 
 // ==================== .env 读写（只保留真正全局的变量）====================
 // GLOBAL_ENV_KEYS defines the allowed keys for .env (non-provider settings).
@@ -299,9 +351,10 @@ function writeEnv(envObj) {
 var PROVIDERS_FILE = path.join(USER_DIR, 'provider-configs.json');
 
 function getMasterKey() {
-  // Derive master encryption key from the proxy auth key
-  var env = readEnv();
-  return (env.PROXY_AUTH_KEY || '').trim() || null;
+  // Encryption master key is now derived from the machine's hardware fingerprint,
+  // independent of PROXY_AUTH_KEY. This means changing the access key no longer
+  // breaks encrypted API Key storage.
+  return getMachineKey();
 }
 
 function readProviders() {
@@ -319,7 +372,11 @@ function readProviders() {
       }
       if (result.wasEncrypted) {
         console.error('[ui] Failed to decrypt key for provider "' + p.name + '" — master key may have changed. Provider will appear without API key.');
-        return Object.assign({}, p, { api_key: '', _decrypt_error: result.error });
+        return Object.assign({}, p, {
+          api_key: '',
+          _decrypt_error: result.error,
+          _decrypt_warning: '加密环境发生改变，密钥无法解密，请编辑重新输入'
+        });
       }
       return p;
     });
@@ -330,23 +387,10 @@ function readProviders() {
 
 function writeProviders(data) {
   var masterKey = getMasterKey();
-  var toSave = data;
-  
-  // Auto-generate PROXY_AUTH_KEY if not yet set
-  if (!masterKey && data.providers && data.providers.length > 0) {
-    var hasKeys = data.providers.some(function(p) { return p.api_key && !isEncrypted(p.api_key); });
-    if (hasKeys) {
-      masterKey = 'sk-' + crypto.randomBytes(24).toString('hex');
-      var env = readEnv();
-      env.PROXY_AUTH_KEY = masterKey;
-      writeEnv(env);
-      console.log('[ui] Auto-generated PROXY_AUTH_KEY for API key encryption');
-    }
-  }
   
   // Encrypt API keys before saving
   if (masterKey && data.providers) {
-    toSave = {
+    var toSave = {
       providers: data.providers.map(function(p) {
         if (!p.api_key) return p;
         if (isEncrypted(p.api_key)) return p;
@@ -360,9 +404,10 @@ function writeProviders(data) {
         }
       })
     };
+    fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(toSave, null, 2));
+  } else {
+    fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(data, null, 2));
   }
-  
-  fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(toSave, null, 2));
 }
 
 
@@ -377,13 +422,32 @@ function generateProxyModels() {
     { "effort": "medium",  "description": "Medium reasoning effort" },
     { "effort": "high",    "description": "High reasoning effort" }
   ];
+  // Known context windows for fallback when model has no explicit context_window
+  const KNOWN_CTX = {
+    'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576,
+    'deepseek-v4-pro': 1048576, 'deepseek-v4-flash': 1048576,
+    'deepseek-v3': 131072, 'deepseek-r1': 131072,
+    'gpt-4o': 128000, 'gpt-4o-mini': 128000,
+    'gpt-4.1': 1048576, 'gpt-4.1-mini': 1048576,
+    'gpt-5': 409600, 'gpt-5.2': 409600,
+    'gpt-5.4': 272000, 'gpt-5.4-pro': 272000,
+    'gpt-5.4-mini': 400000, 'gpt-5.4-nano': 128000,
+    'o1': 200000, 'o3': 200000, 'o3-mini': 200000, 'o4-mini': 200000,
+    'claude-sonnet-4-20250514': 200000, 'claude-opus-4-20250514': 200000,
+    'claude-haiku-3-5': 200000,
+    'gemini-2.5-pro': 1048576, 'gemini-2.5-flash': 1048576,
+    'qwen3-235b': 131072, 'qwen-max': 131072,
+    'mistral-large': 128000, 'llama-4-maverick': 1048576,
+  };
 
   (providers || []).forEach((p, idx) => {
     (p.models || []).forEach(m => {
       const slug = m.slug || m.id;
+      const ctxWindow = m.context_window || KNOWN_CTX[slug] || 200000;
       models.push({
         "slug": slug,
         "display_name": m.display_name || m.id,
+        "context_window": ctxWindow,
         "supported_reasoning_levels": defaultReasoning,
         "shell_type": "default",
         "visibility": "list",
@@ -392,7 +456,7 @@ function generateProxyModels() {
         "base_instructions": "",
         "supports_reasoning_summaries": false,
         "support_verbosity": false,
-        "truncation_policy": { "mode": "tokens", "limit": 204800 },
+        "truncation_policy": { "mode": "tokens", "limit": ctxWindow },
         "supports_parallel_tool_calls": true,
         "experimental_supported_tools": [],
         "_upstream_base_url": normalizeModelsUrl(p.base_url).replace(/\/models$/, ''),
@@ -479,6 +543,76 @@ function writeCodexAuth(data) {
   const authPath = path.join(CODEX_CONFIG_DIR, 'auth.json');
   data._note = '以下配置信息由 Codex Assistant 生成，原始配置信息已通过软件自动备份';
   fs.writeFileSync(authPath, JSON.stringify(data, null, 2));
+}
+
+// 完整重写 config.toml：只保留 Codex 自己的 section，其余由 CA 重新生成
+// 彻底清除旧版 # 替换去掉注释 标记和 CA 生成的冗余内容
+function rewriteCodexConfig(model, ctxWindow, proxyPort) {
+  var cfgPath = path.join(CODEX_CONFIG_DIR, 'config.toml');
+  var oldContent = readCodexConfig();
+
+  // 提取 Codex 原生的 section（非 CA 管理），逐 section 收集
+  var codexSections = [];
+  var lines = oldContent.split('\n');
+  var inSection = false;
+  var sectionLines = [];
+  var currentSectionName = '';
+
+  // CA 管理的 section 名称
+  var caManaged = ['model_providers.local_proxy'];
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var trimmed = line.trim();
+
+    // 跳过 CA 的 header 和注释
+    if (trimmed.startsWith('#') && trimmed.includes('Codex Assistant')) continue;
+    if (trimmed === CODEX_HEADER.trim()) continue;
+
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      // 保存前一个 section
+      if (inSection && sectionLines.length > 0 && !caManaged.includes(currentSectionName)) {
+        codexSections.push(sectionLines.join('\n'));
+      }
+      currentSectionName = trimmed.slice(1, -1);
+      sectionLines = [line];
+      inSection = true;
+    } else if (inSection) {
+      sectionLines.push(line);
+    }
+    // 顶级 key 由 CA 重新生成，直接丢弃
+  }
+  // 保存最后一个 section
+  if (inSection && sectionLines.length > 0 && !caManaged.includes(currentSectionName)) {
+    codexSections.push(sectionLines.join('\n'));
+  }
+
+  // 组装新内容
+  var parts = [CODEX_HEADER.trimEnd()];
+  parts.push('');
+  parts.push('# Codex 配置 - 由 Codex Assistant UI 自动生成');
+  parts.push('model = ' + JSON.stringify(model));
+  parts.push('model_reasoning_effort = "medium"');
+  parts.push('model_provider = "local_proxy"');
+  parts.push('model_context_window = ' + ctxWindow);
+  parts.push('max_tokens = 4096');
+  parts.push('enable_request_compression = false');
+  parts.push('allow_model_truncation = false');
+  parts.push('');
+  parts.push('[model_providers.local_proxy]');
+  parts.push('name = ' + JSON.stringify(model));
+  parts.push('base_url = "http://127.0.0.1:' + proxyPort + '/v1"');
+  parts.push('wire_api = "responses"');
+  parts.push('requires_openai_auth = true');
+
+  // 追加 Codex 原生 section
+  for (var j = 0; j < codexSections.length; j++) {
+    parts.push('');
+    parts.push(codexSections[j]);
+  }
+
+  fs.writeFileSync(cfgPath, parts.join('\n') + '\n');
+  console.log('[codex] Config rewritten: model=' + model + ', port=' + proxyPort);
 }
 
 function parseToml(content) {
@@ -598,15 +732,17 @@ async function syncCodexConfig() {
   const codexConfig = readCodexConfig();
   const parsed = parseToml(codexConfig);
 
-  // 1. 同步访问密钥（双向同步，Codex 优先）
+  // 1. 同步访问密钥（CA ↔ Codex 双向同步，减少对 Codex 的配置改动）
   const proxyKey = env.PROXY_AUTH_KEY || '';
   const codexKey = auth.OPENAI_API_KEY || '';
 
   if (codexKey && codexKey !== proxyKey) {
     env.PROXY_AUTH_KEY = codexKey;
     writeEnv(env);
-    syncResults.push('已从 Codex 同步访问密钥');
-  } else if (proxyKey && proxyKey !== codexKey) {
+    syncResults.push('已同步访问密钥到 CA');
+  }
+
+  if (proxyKey && proxyKey !== codexKey) {
     auth.OPENAI_API_KEY = proxyKey;
     writeCodexAuth(auth);
     syncResults.push('已同步访问密钥到 Codex');
@@ -621,24 +757,11 @@ async function syncCodexConfig() {
   }
 
   if (needRewrite && codexConfig) {
-    ensureCodexHeader();
-    // 从当前 CA 配置里拿模型信息重写 config.toml
+    // 完整重写：清空旧内容，只保留 Codex 自己的 section，其余由 CA 重新生成
     var currentModel = parsed.model || 'mimo-v2.5';
     var ctxWindow = parsed.model_context_window || 131072;
     var proxyPort = env.PROXY_PORT || '4000';
-
-    updateCodexTopKey('model', JSON.stringify(currentModel));
-    updateCodexTopKey('model_reasoning_effort', '"medium"');
-    updateCodexTopKey('model_provider', '"local_proxy"');
-    updateCodexTopKey('model_context_window', String(ctxWindow));
-    updateCodexTopKey('max_tokens', '4096');
-    updateCodexTopKey('enable_request_compression', 'false');
-    updateCodexTopKey('allow_model_truncation', 'false');
-    updateCodexSectionKey('model_providers.local_proxy', 'name', JSON.stringify(currentModel));
-    updateCodexSectionKey('model_providers.local_proxy', 'base_url', '"http://127.0.0.1:' + proxyPort + '/v1"');
-    updateCodexSectionKey('model_providers.local_proxy', 'wire_api', '"responses"');
-    updateCodexSectionKey('model_providers.local_proxy', 'requires_openai_auth', 'true');
-
+    rewriteCodexConfig(currentModel, ctxWindow, proxyPort);
     syncResults.push('已完整重写 Codex 配置（model=' + currentModel + ', port=' + proxyPort + '）');
   } else {
     // 4. 只同步端口
@@ -825,9 +948,7 @@ function checkCodexRunningType() {
       if (pathResult) {
         // 微软商店版路径包含 WindowsApps
         if (pathResult.includes('WindowsApps')) return 'app';
-        // 安装包版路径包含 .chatclaw
-        if (pathResult.includes('.chatclaw')) return 'cli';
-        return 'app'; // 默认桌面版
+        return 'app'; // 默认桌面版（无法从路径区分 CLI/桌面，统一按桌面处理）
       }
     } catch {}
 
@@ -897,29 +1018,15 @@ var _codexInstallCache = null;
 function getCodexInstallInfo() {
   if (_codexInstallCache) return _codexInstallCache;
 
-  // 1. 安装包版固定路径（毫秒级，命中即返回）
-  var exePaths = [
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Codex', 'Codex.exe'),
-    path.join(process.env.USERPROFILE || '', '.chatclaw', 'native', 'bin', 'codex.exe'),
-  ];
-  for (var i = 0; i < exePaths.length; i++) {
-    if (fs.existsSync(exePaths[i])) {
-      _codexInstallCache = { type: 'exe', path: exePaths[i] };
-      return _codexInstallCache;
-    }
-  }
-
-  // 2. 检查 App Execution Alias
-  var storeAlias = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WindowsApps', 'codex.exe');
-  var hasAlias = fs.existsSync(storeAlias);
-
-  // 3. 微软商店版检测
+  // 1. 微软商店版检测（优先，因为"启动 Codex 桌面版"应指向商店版）
   try {
     var storeResult = execFileSync('powershell', [
       '-NoProfile', '-NonInteractive', '-Command',
       'Get-AppxPackage -Name "OpenAI.Codex" | Select-Object -ExpandProperty PackageFamilyName'
-    ], { encoding: 'utf8', timeout: 2000 }).trim();
+    ], { encoding: 'utf8', timeout: 3000 }).trim();
     if (storeResult && storeResult.includes('OpenAI.Codex')) {
+      var storeAlias = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WindowsApps', 'codex.exe');
+      var hasAlias = fs.existsSync(storeAlias);
       _codexInstallCache = {
         type: 'store',
         packageFamilyName: storeResult,
@@ -928,9 +1035,24 @@ function getCodexInstallInfo() {
       return _codexInstallCache;
     }
   } catch {}
-  
-  // 4. 兜底：PATH 中的 codex
-  _codexInstallCache = { type: 'path', path: 'codex' };
+
+  // 2. 安装包版固定路径（排除 .chatclaw 沙箱版，那是 CLI 环境）
+  var exePaths = [
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Codex', 'Codex.exe'),
+  ];
+  for (var i = 0; i < exePaths.length; i++) {
+    if (fs.existsSync(exePaths[i])) {
+      _codexInstallCache = { type: 'exe', path: exePaths[i] };
+      return _codexInstallCache;
+    }
+  }
+
+  // 3. 检查 .chatclaw 沙箱版（CLI 专用，不用于桌面模式）
+  var chatclawPath = path.join(process.env.USERPROFILE || '', '.chatclaw', 'native', 'bin', 'codex.exe');
+  var hasChatclaw = fs.existsSync(chatclawPath);
+
+  // 4. 兜底：PATH 中的 codex（npm 全局安装或手动放 PATH 的）
+  _codexInstallCache = { type: 'path', path: hasChatclaw ? chatclawPath : 'codex' };
   return _codexInstallCache;
 }
 
@@ -1111,7 +1233,12 @@ var _codexppPathCache = undefined;
 var _codexppMgrPathCache = undefined;
 
 function getCodexPlusPlusPath() {
-  if (_codexppPathCache !== undefined) return _codexppPathCache;
+  if (_codexppPathCache !== undefined) {
+    // Verify cached path still exists
+    if (_codexppPathCache && fs.existsSync(_codexppPathCache)) return _codexppPathCache;
+    // Cache is stale (null or path gone) — re-scan so freshly installed Codex++ is detected
+    _codexppPathCache = undefined;
+  }
   // Check manual config first
   var manual = loadCodexppManualConfig();
   if (manual.codexppPath && fs.existsSync(manual.codexppPath)) {
@@ -1131,7 +1258,12 @@ function getCodexPlusPlusPath() {
 }
 
 function getCodexPlusPlusManagerPath() {
-  if (_codexppMgrPathCache !== undefined) return _codexppMgrPathCache;
+  if (_codexppMgrPathCache !== undefined) {
+    // Verify cached path still exists
+    if (_codexppMgrPathCache && fs.existsSync(_codexppMgrPathCache)) return _codexppMgrPathCache;
+    // Cache is stale (null or path gone) — re-scan
+    _codexppMgrPathCache = undefined;
+  }
 
   // 手动配置优先
   var manual = loadCodexppManualConfig();
@@ -1190,18 +1322,50 @@ function checkCodexInstalled() {
 
 function startCodexCli() {
   try {
-    const codexInfo = getCodexInstallInfo();
-    if (codexInfo.type === 'path' && codexInfo.path === 'codex') {
-      // Fallback to PATH — verify codex actually exists
-      try {
-        execFileSync('where', ['codex'], { encoding: 'utf8', timeout: 3000 });
-      } catch {
-        return { success: false, message: '未找到 Codex CLI，请先安装 Codex（微软商店或官网下载）' };
+    // CLI mode specifically looks for npm global install or sandbox version,
+    // NOT the Microsoft Store version (which is GUI-only).
+    var cliPath = null;
+
+    // 1. Check npm global install (prefer .cmd over shell script)
+    try {
+      var whereResult = execFileSync('where', ['codex'], { encoding: 'utf8', timeout: 3000 }).trim();
+      if (whereResult) {
+        var lines = whereResult.split('\n');
+        // First pass: find .cmd (Windows batch) or .ps1 (PowerShell)
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (line.endsWith('.cmd') || line.endsWith('.ps1')) {
+            cliPath = line;
+            break;
+          }
+        }
+        // Second pass: find any npm path that isn't a bare shell script
+        if (!cliPath) {
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (line.includes('npm') && line.includes('.') && !line.endsWith('\\npm\\codex')) {
+              cliPath = line;
+              break;
+            }
+          }
+        }
+        // Fallback: first result (will likely fail if it's a shell script, but worth trying)
+        if (!cliPath) cliPath = lines[0].trim();
       }
+    } catch {}
+
+    // 2. Check .chatclaw sandbox version
+    if (!cliPath) {
+      var chatclawExe = path.join(process.env.USERPROFILE || '', '.chatclaw', 'native', 'bin', 'codex.exe');
+      if (fs.existsSync(chatclawExe)) cliPath = chatclawExe;
     }
+
+    if (!cliPath) {
+      return { success: false, message: '未找到 Codex CLI，请运行 npm install -g @openai/codex 安装' };
+    }
+
     trustCodexDirectory(PROJECT_DIR);
-    const codexPath = codexInfo.path || 'codex';
-    const cmd = `start "Codex CLI" cmd /k "\"${codexPath}\" -C \"${PROJECT_DIR}\""`;
+    var cmd = `start "Codex CLI" cmd /k ${cliPath} -C "${PROJECT_DIR.replace(/\\/g, '/')}"`;
     console.log('[codex] Starting CLI:', cmd);
     exec(cmd, { shell: true }, (err, stdout, stderr) => {
       if (err) console.error('[codex] CLI error:', err.message);
@@ -1213,35 +1377,50 @@ function startCodexCli() {
 
 
 
-function startCodexApp() {
+function startCodexApp(forceExe) {
   try {
-    const installInfo = getCodexInstallInfo();
-    if (installInfo.type === 'path' && installInfo.path === 'codex') {
-      try {
-        execFileSync('where', ['codex'], { encoding: 'utf8', timeout: 3000 });
-      } catch {
-        return { success: false, message: '未找到 Codex，请先安装 Codex（微软商店或官网下载）' };
-      }
+    var installInfo;
+    var installerPath = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Codex', 'Codex.exe');
+
+    if (forceExe && fs.existsSync(installerPath)) {
+      // User explicitly chose installer version
+      installInfo = { type: 'exe', path: installerPath };
+    } else {
+      installInfo = getCodexInstallInfo();
+    }
+
+    if (installInfo.type === 'store') {
+      trustCodexDirectory(PROJECT_DIR);
+      const cmd = `powershell -Command "Start-Process 'shell:AppsFolder\\${installInfo.packageFamilyName}!App'"`;
+      console.log('[codex] Starting Store app:', cmd);
+      exec(cmd, { shell: true }, (err, stdout, stderr) => {
+        if (err) console.error('[codex] App error:', err.message);
+        if (stderr) console.error('[codex] App stderr:', stderr);
+      });
+      return { success: true, message: 'Codex Store 版启动命令已发送' };
+    }
+
+    if (installInfo.type === 'exe') {
+      trustCodexDirectory(PROJECT_DIR);
+      const codexPath = installInfo.path || 'codex';
+      const cmd = `start "" "${codexPath}" app "${PROJECT_DIR}"`;
+      console.log('[codex] Starting exe app:', cmd);
+      exec(cmd, { shell: true }, (err, stdout, stderr) => {
+        if (err) console.error('[codex] App error:', err.message);
+        if (stderr) console.error('[codex] App stderr:', stderr);
+      });
+      return { success: true, message: 'Codex 桌面版启动命令已发送' };
+    }
+
+    // Fallback: try PATH
+    try {
+      execFileSync('where', ['codex'], { encoding: 'utf8', timeout: 3000 });
+    } catch {
+      return { success: false, message: '未找到 Codex，请先安装 Codex（微软商店或官网下载）' };
     }
     trustCodexDirectory(PROJECT_DIR);
-    let cmd;
-    
-    if (installInfo.type === 'store') {
-      // 微软商店版使用 PowerShell Start-Process 启动
-      cmd = `powershell -Command "Start-Process 'shell:AppsFolder\\${installInfo.packageFamilyName}!App'"`;
-      console.log('[codex] Starting Store app:', cmd);
-    } else {
-      // 安装包版使用 codex app 命令
-      const codexPath = installInfo.path || 'codex';
-      cmd = `start "" "${codexPath}" app "${PROJECT_DIR}"`;
-      console.log('[codex] Starting exe app:', cmd);
-    }
-    
-    exec(cmd, { shell: true }, (err, stdout, stderr) => {
-      if (err) console.error('[codex] App error:', err.message);
-      if (stderr) console.error('[codex] App stderr:', stderr);
-    });
-    return { success: true, message: 'Codex 桌面版启动命令已发送' };
+    exec(`start "" codex app "${PROJECT_DIR}"`, { shell: true });
+    return { success: true, message: 'Codex 启动命令已发送（PATH 版本）' };
   } catch (e) { return { success: false, message: `启动失败: ${e.message}` }; }
 }
 
@@ -1270,17 +1449,18 @@ function stopCodex() {
 
 function startCodexPlusPlus() {
   try {
-    trustCodexDirectory(PROJECT_DIR);
+    // 不调用 trustCodexDirectory — Codex++ 是独立应用，有自己的配置目录
+    // 如果写入 Codex CLI 的 config.toml，Codex++ 可能会尝试加载 PROJECT_DIR 导致渲染崩溃
     const codexPath = getCodexPlusPlusPath();
     if (!codexPath) return { success: false, message: '未找到 Codex++ 安装' };
-    console.log('[codex] Starting Codex++:', codexPath, PROJECT_DIR);
-    // Use cmd /c start to go through ShellExecute — spawn directly on non-C-drive
-    // exes can hit EACCES due to Windows integrity level restrictions.
-    execFile('cmd', ['/c', 'start', '', codexPath, PROJECT_DIR], function (err) {
-      if (err) console.error('[codex] Codex++ launch error:', err.message);
+    var cmd = 'start "" "' + codexPath + '"';
+    console.log('[codex] Starting Codex++:', cmd);
+    exec(cmd, { shell: true }, function (err, stdout, stderr) {
+      if (err) console.error('[codex] Codex++ exec error:', err.message);
+      if (stderr) console.error('[codex] Codex++ stderr:', stderr);
     });
     return { success: true, message: 'Codex++ 启动命令已发送' };
-  } catch (e) { return { success: false, message: `启动失败: ${e.message}` }; }
+  } catch (e) { return { success: false, message: '启动失败: ' + e.message }; }
 }
 
 function startCodexPlusPlusManager() {
@@ -1400,6 +1580,16 @@ const server = http.createServer(async (req, res) => {
     } else { res.writeHead(404); res.end(); }
     return;
   }
+  // Module JS files
+  var staticModules = ['common.js', 'dashboard.js', 'providers.js', 'env.js', 'backup.js', 'settings.js'];
+  if (staticModules.indexOf(pathname.slice(1)) !== -1) {
+    const fp = path.join(PROJECT_DIR, pathname.slice(1));
+    if (fs.existsSync(fp)) {
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
+      res.end(fs.readFileSync(fp));
+    } else { res.writeHead(404); res.end(); }
+    return;
+  }
   if (pathname === '/ui-favicon.ico') {
     const fp = path.join(PROJECT_DIR, 'ui-favicon.ico');
     if (fs.existsSync(fp)) {
@@ -1410,6 +1600,22 @@ const server = http.createServer(async (req, res) => {
   }
   if (pathname === '/ui-favicon.png') {
     const fp = path.join(PROJECT_DIR, 'ui-favicon.png');
+    if (fs.existsSync(fp)) {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(fs.readFileSync(fp));
+    } else { res.writeHead(404); res.end(); }
+    return;
+  }
+  if (pathname === '/logo-baidu-pan.png') {
+    const fp = path.join(PROJECT_DIR, 'logo-baidu-pan.png');
+    if (fs.existsSync(fp)) {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(fs.readFileSync(fp));
+    } else { res.writeHead(404); res.end(); }
+    return;
+  }
+  if (pathname === '/logo-lanzou.png') {
+    const fp = path.join(PROJECT_DIR, 'logo-lanzou.png');
     if (fs.existsSync(fp)) {
       res.writeHead(200, { 'Content-Type': 'image/png' });
       res.end(fs.readFileSync(fp));
@@ -1527,20 +1733,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/env' && method === 'GET') {
     const env = readEnv();
     
-    // 首次访问自动生成随机密钥
-    if (!env.PROXY_AUTH_KEY) {
-      const crypto = await import('crypto');
-      const newKey = 'sk-' + crypto.randomBytes(24).toString('hex');
-      env.PROXY_AUTH_KEY = newKey;
-      writeEnv(env);
-      // 同步更新 Codex auth
-      const auth = readCodexAuth();
-      auth.OPENAI_API_KEY = newKey;
-      writeCodexAuth(auth);
-      console.log('[ui] 首次访问，已自动生成访问密钥');
-    }
-    
-    // 同时返回 Codex auth 中的 key
+    // 同时返回 Codex auth 中的 key（用于前端显示同步状态）
     const auth = readCodexAuth();
     env.CODEX_API_KEY = auth.OPENAI_API_KEY || '';
     return sendJson(res, 200, env);
@@ -1572,6 +1765,7 @@ const server = http.createServer(async (req, res) => {
         delete data.CODEX_API_KEY;
       }
       writeEnv(data);
+      
       return sendJson(res, 200, { success: true });
     } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
@@ -1893,7 +2087,8 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, startCodexCli());
   }
   if (pathname === '/api/codex/start-app' && method === 'POST') {
-    return sendJson(res, 200, startCodexApp());
+    var forceExe = parsedUrl.searchParams.get('version') === 'exe';
+    return sendJson(res, 200, startCodexApp(forceExe));
   }
   if (pathname === '/api/codex/start-codexpp' && method === 'POST') {
     return sendJson(res, 200, startCodexPlusPlus());
@@ -1916,8 +2111,13 @@ const server = http.createServer(async (req, res) => {
   }
   if (pathname === '/api/codex/check-desktop' && method === 'GET') {
     var info = getCodexInstallInfo();
+    // Check installer path separately
+    var installerPath = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Codex', 'Codex.exe');
+    var hasExe = fs.existsSync(installerPath);
     return sendJson(res, 200, {
-      ok: info.type !== 'path' || false,
+      hasStore: info.type === 'store',
+      hasExe: hasExe,
+      ok: info.type === 'store' || hasExe,
       type: info.type,
       packageFamilyName: info.packageFamilyName || '',
       path: info.path || ''
@@ -1940,7 +2140,15 @@ const server = http.createServer(async (req, res) => {
       if (fs.existsSync(CODEXPP_CONFIG_FILE)) {
         codexppCfg = JSON.parse(fs.readFileSync(CODEXPP_CONFIG_FILE, 'utf-8'));
       }
-      // 不再在此接口做自动检测（会阻塞其他请求），由独立端点 /api/codex/check-plusplus 处理
+      // 如果手动配置中没有路径，尝试自动检测
+      if (!codexppCfg.codexppPath) {
+        var detectedPath = getCodexPlusPlusPath();
+        if (detectedPath) codexppCfg.codexppPath = detectedPath;
+      }
+      if (!codexppCfg.codexppMgrPath) {
+        var detectedMgrPath = getCodexPlusPlusManagerPath();
+        if (detectedMgrPath) codexppCfg.codexppMgrPath = detectedMgrPath;
+      }
       return sendJson(res, 200, codexppCfg);
     } catch (e) { return sendJson(res, 500, { error: e.message }); }
   }
@@ -2116,7 +2324,7 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
 
-  // API: 导入配置（明文 Key，自动用本地 PROXY_AUTH_KEY 加密存储）
+  // API: 导入配置（明文 Key，自动用机器码加密存储）
   if (pathname === '/api/import-config' && method === 'POST') {
     try {
       const body = await collectBody(req);
@@ -2143,7 +2351,7 @@ const server = http.createServer(async (req, res) => {
             var apiKey = imp.api_key || '';
             if (apiKey === '***configured***') apiKey = '';  // 旧格式掩码，无法还原
             if (!apiKey) needsKeyProviders.push(imp.name);
-            // 明文 Key 直接存入，writeProviders() 会自动用本地 PROXY_AUTH_KEY 加密
+            // 明文 Key 直接存入，writeProviders() 会自动用机器码加密
             current.providers.push({
               name: imp.name, base_url: imp.base_url, api_key: apiKey,
               protocol: imp.protocol || 'openai', models: imp.models || [],
@@ -2188,17 +2396,19 @@ const server = http.createServer(async (req, res) => {
     try {
       const { getCurrentVersion, checkForUpdates, compareVersions } = await import('./src/updater.mjs');
       const current = getCurrentVersion(PROJECT_DIR);
-      const latest = await checkForUpdates(current.version);
+      const latest = await checkForUpdates();
       
-      if (!latest) {
+      if (latest.error) {
+        // Update check failed — return the error so the frontend can show it
         return sendJson(res, 200, { 
           hasUpdate: false, 
           currentVersion: current.version,
-          message: 'Unable to check for updates or no release available'
+          checkError: latest.error,
+          message: '无法检查更新'
         });
       }
 
-      const hasUpdate = compareVersions(current.version, latest.version) < 0;
+      const hasUpdate = compareVersions(current.version, latest.version) > 0 ? false : (compareVersions(current.version, latest.version) < 0);
       
       return sendJson(res, 200, {
         hasUpdate,
@@ -2211,51 +2421,7 @@ const server = http.createServer(async (req, res) => {
         releaseUrl: latest.htmlUrl
       });
     } catch (err) {
-      return sendJson(res, 500, { error: err.message });
-    }
-  }
-
-  // Download and apply update
-  if (pathname === '/api/update' && method === 'POST') {
-    try {
-      const { getCurrentVersion, downloadFile, applyUpdate } = await import('./src/updater.mjs');
-      const current = getCurrentVersion(PROJECT_DIR);
-      
-      // Get latest release info
-      var checkRes = await fetch('http://127.0.0.1:' + UI_PORT + '/api/check-update');
-      var checkData = await checkRes.json();
-      
-      if (!checkData.hasUpdate) {
-        return sendJson(res, 200, { success: false, message: 'No update available' });
-      }
-
-      // Download update
-      const downloadDir = path.join(PROJECT_DIR, '.update-downloads');
-      if (!fs.existsSync(downloadDir)) {
-        fs.mkdirSync(downloadDir, { recursive: true });
-      }
-      
-      const zipPath = path.join(downloadDir, checkData.fileName);
-      
-      // Send progress updates via SSE or just wait
-      await downloadFile(checkData.downloadUrl, zipPath);
-      
-      // Apply update
-      const backupDir = path.join(PROJECT_DIR, '.update-backup');
-      await applyUpdate(PROJECT_DIR, zipPath, { backupDir });
-      
-      // Clean up download directory
-      if (fs.existsSync(downloadDir)) {
-        fs.rmSync(downloadDir, { recursive: true });
-      }
-      
-      return sendJson(res, 200, { 
-        success: true, 
-        message: `Updated from ${current.version} to ${checkData.latestVersion}`,
-        newVersion: checkData.latestVersion
-      });
-    } catch (err) {
-      return sendJson(res, 500, { success: false, error: err.message });
+      return sendJson(res, 200, { hasUpdate: false, currentVersion: '?', checkError: err.message });
     }
   }
 

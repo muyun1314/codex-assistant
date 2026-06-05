@@ -8,7 +8,7 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-18%2B-339933?logo=node.js&logoColor=white" alt="Node.js 18+"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="Zero Dependencies">
-  <img src="https://img.shields.io/github/v/release/wujfeng712-ui/Codex-Assistant?label=version" alt="Release version">
+  <img src="https://img.shields.io/github/v/release/muyun1314/codex-assistant?label=version" alt="Release version">
 </p>
 
 <p align="center">
@@ -26,12 +26,13 @@
 Codex CLI 使用 **OpenAI Responses API**，而 DeepSeek 和 MiMo 使用 **Chat Completions API**。  
 Codex Assistant 在两者之间**双向转换** — 包含流式 SSE、工具调用与思考模式回合 — 让你在不修改 Codex 客户端的前提下，使用任意支持的模型。
 
-**新增功能（v1.1.0+）：**
-- 🖥️ **Web 可视化管理界面** — 提供商管理、环境变量配置、日志查看、一键启停
-- 💻 **桌面应用版** — C# 启动器 + Edge --app 模式，免安装，解压即用
-- 🔐 **API Key 加密存储** — AES-256-GCM + PBKDF2，磁盘上无明文密钥
-- 🔄 **配置导入/导出** — 跨设备迁移配置（含密钥加密迁移）
-- 🔔 **自动更新** — 检测 GitHub Releases 新版本并自动升级
+**新增功能（v1.2.7）：**
+- 🔐 **机器码加密** — API Key 加密改用硬件机器码，与访问密钥独立，修改访问密钥不再影响已保存的 Key
+- 🧩 **前端模块化** — `ui-frontend.js` 拆分为 6 个独立模块（common/dashboard/providers/env/backup/settings），便于维护
+- 🌓 **系统主题跟随** — 支持浅色/深色/跟随系统三种模式
+- 📡 **版本检查优化** — 浏览器直连 GitHub API，hosts 修改用户也能正常检测更新
+- 🔧 **deepseek-v4-pro 上下文** — 更新为 1M tokens
+- 🐛 **多项 Bug 修复** — API Key 丢失问题彻底解决、加密机制重构、警告文案修正
 
 ---
 
@@ -39,7 +40,7 @@ Codex Assistant 在两者之间**双向转换** — 包含流式 SSE、工具调
 
 ### 方式一：桌面应用（推荐，Windows）
 
-1. 从 [Releases](https://github.com/wujfeng712-ui/Codex-Assistant/releases) 页面下载 `CodexAssistant.zip`
+1. 从 [Releases](https://github.com/muyun1314/codex-assistant/releases) 页面下载 `CodexAssistant.zip`
 2. 解压到任意纯英文目录！纯英文目录！纯英文目录（无需安装）
 3. 双击 `CodexAssistant.exe` 启动
 4. 首次启动会自动生成访问密钥，并在浏览器中打开管理界面
@@ -49,8 +50,8 @@ Codex Assistant 在两者之间**双向转换** — 包含流式 SSE、工具调
 ### 方式二：Web UI 版（手动启动）
 
 ```bash
-git clone https://github.com/wujfeng712-ui/Codex-Assistant.git
-cd Codex-Assistant
+git clone https://github.com/muyun1314/codex-assistant.git
+cd codex-assistant
 
 # 双击运行（Windows）
 启动UI.cmd
@@ -154,20 +155,21 @@ cd Codex-Assistant
 存储格式：CAENC:<base64>
 加密算法：AES-256-GCM
 密钥派生：PBKDF2（100,000 次迭代，SHA-256）
-主密钥：PROXY_AUTH_KEY（自动生成或手动指定）
+主密钥：Windows MachineGuid（硬件指纹），独立于 PROXY_AUTH_KEY
 ```
 
-**即使 `provider-configs.json` 被泄露，攻击者也必须在知道 `PROXY_AUTH_KEY` 的情况下才能解密 API Key。**
+**即使 `provider-configs.json` 被泄露，攻击者也必须在同一台机器上才能解密 API Key。**
 
-- 首次访问 Web UI 时，系统自动生成 `PROXY_AUTH_KEY`（48 位十六进制字符串）
-- 也可在 `user/.env` 中手动指定：`PROXY_AUTH_KEY=sk-proxy-local-xxxx`
-- 导出配置时，`PROXY_AUTH_KEY` 以明文形式包含在 JSON 中（用于跨设备解密）
+- 加密密钥基于机器硬件指纹自动生成，无需手动配置
+- 更换机器 / 主板 / 系统后已保存的 Key 需要重新输入
+- PROXY_AUTH_KEY 仅用作 Codex 通信的访问密钥，不再参与加密
+- 导出配置仅用于跨设备查看配置结构，不能用于迁移加密 Key
 
 ---
 
 ## 🔔 自动更新
 
-系统每次启动 Web UI 时自动检查 [GitHub Releases](https://github.com/wujfeng712-ui/Codex-Assistant/releases) 是否有新版本：
+系统每次启动 Web UI 时自动检查 [GitHub Releases](https://github.com/muyun1314/codex-assistant/releases) 是否有新版本：
 
 1. 点击侧边栏底部「检查版本更新」
 2. 若有新版本，点击「一键更新」
@@ -419,12 +421,18 @@ MODEL_CATALOG_PATH=~/.codex/proxy-models.json
 ## 📦 项目结构
 
 ```
-Codex-Assistant/
+codex-assistant/
 ├── proxy.mjs              # 代理核心（路由、协议转换、鉴权、流处理）
 ├── ui-server.mjs         # Web UI 后端（提供商 CRUD、进程管理、静态服务）
 ├── ui-frontend.html      # 管理界面 HTML
 ├── ui-frontend.css       # 管理界面样式（浅色/深色主题）
-├── ui-frontend.js        # 管理界面前端逻辑
+├── ui-frontend.js        # 管理界面前端逻辑（单体源文件）
+├── common.js             # 前端公共模块（状态/主题/API/导航）
+├── dashboard.js          # 仪表盘模块（代理控制/模型选择）
+├── providers.js          # 提供商管理模块（CRUD/模型管理）
+├── env.js                # 环境配置模块（环境变量/日志）
+├── backup.js             # 备份管理模块（Codex备份/Codexpp路径）
+├── settings.js           # 设置模块（版本检查/关闭行为/初始化）
 ├── src/
 │   ├── shared.mjs        # 共用工具函数
 │   ├── protocol.mjs      # 协议翻译（Responses ↔ Chat Completions）
@@ -500,6 +508,18 @@ npm test
 
 ## 📝 更新日志
 
+### v1.2.7（2026-06-05）
+
+- ✨ API Key 加密改用机器码（Windows MachineGuid），与访问密钥解耦
+- ✨ 前端模块化拆分：ui-frontend.js → 6 个独立模块（common/dashboard/providers/env/backup/settings）
+- ✨ 主题支持跟随系统（浅色/深色/系统三种模式）
+- ✨ 版本检查增加浏览器直连降级（hosts 修改用户也能检测更新）
+- ✨ deepseek-v4-pro 上下文窗口更新为 1M tokens
+- 🔧 修复 syncCodexConfig 双向同步导致 API Key 丢失
+- 🔧 修复更新检查在 hosts 网络环境下静默失败
+- 🔧 修复加密相关警告文案过时问题
+- 🔧 修复模块文件未列入 Tauri bundle 导致开发版启动失败
+
 ### v1.1.0（2026-05-29）
 
 - ✨ 新增 Web 可视化管理界面
@@ -532,5 +552,5 @@ MIT — 详见 [LICENSE](./LICENSE)。
 ---
 
 <p align="center">
-  <i>用 ❤️ 制作 by <a href="https://github.com/wujfeng712-ui">wujfeng712-ui</a></i>
+  <i>用 ❤️ 制作 by <a href="https://github.com/muyun1314">muyun1314</a></i>
 </p>

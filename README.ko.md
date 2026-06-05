@@ -41,7 +41,7 @@ Codex Assistant는 둘 사이를 양방향으로 변환합니다 — 스트리�
 ### 1. 설정
 
 ```bash
-git clone https://github.com/wujfeng712-ui/Codex Assistant.git
+git clone https://github.com/muyun1314/Codex Assistant.git
 cd Codex Assistant
 cp env.example .env
 ```

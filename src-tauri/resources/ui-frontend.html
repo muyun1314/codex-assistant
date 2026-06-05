@@ -93,7 +93,7 @@
   <div class="page active" id="page-dashboard">
     <div class="page-header">
       <h1 class="page-title">仪表盘</h1>
-      <p class="page-subtitle">Codex 代理服务器运行状态与快捷管理</p>
+      <p class="page-subtitle">Codex 代理服务器运行状态与快捷管理。</p>
     </div>
 
     <!-- Status Cards -->
@@ -138,7 +138,16 @@
       <div class="quick-actions">
         <button class="btn btn-primary" id="btn-proxy" onclick="toggleProxy()">启动代理</button>
         <button class="btn btn-secondary" id="btn-codex-cli" onclick="startCodex('cli')" disabled>启动 Codex CLI</button>
-        <button class="btn btn-secondary" id="btn-codex-app" onclick="startCodex('app')" disabled>启动 Codex 桌面版</button>
+        <div class="btn-split" id="btn-codex-app-wrap">
+          <button class="btn btn-secondary btn-split-main" id="btn-codex-app" onclick="startCodexAppVariant()" disabled>启动 Codex Store 版</button>
+          <button class="btn btn-secondary btn-split-arrow" id="btn-codex-app-arrow" onclick="toggleCodexAppVariant()" disabled title="切换版本">
+            <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="btn-split-menu" id="btn-codex-app-menu" style="display:none;">
+            <div class="btn-split-item active" id="btn-codex-variant-store" onclick="selectCodexAppVariant('store')">Codex Store 版</div>
+            <div class="btn-split-item" id="btn-codex-variant-exe" onclick="selectCodexAppVariant('exe')" title="安装包版本(Programs\Codex\Codex.exe)">Codex 桌面版</div>
+          </div>
+        </div>
         <button class="btn btn-secondary" id="btn-codexpp" onclick="startCodex('codexpp')" disabled>启动 Codex++</button>
         <button class="btn btn-secondary" id="btn-codexpp-manager" onclick="startCodex('codexpp-manager')" disabled>Codex++ 管理工具</button>
         <button class="btn btn-danger" onclick="stopCodex()">停止 Codex</button>
@@ -180,7 +189,7 @@
     <div class="page-header">
       <h1 class="page-title">提供商管理</h1>
       <p class="page-subtitle">
-        添加 OpenAI 兼容的 API 提供商，自动拉取可用模型列表
+        添加 OpenAI 兼容的 API 提供商，自动拉取可用模型列表。
       </p>
     </div>
 
@@ -202,7 +211,7 @@
   <div class="page" id="page-env">
     <div class="page-header">
       <h1 class="page-title">环境配置</h1>
-      <p class="page-subtitle">编辑代理启动时读取的环境变量，修改后需重启生效</p>
+      <p class="page-subtitle">编辑代理启动时读取的环境变量，修改后需重启生效。</p>
     </div>
 
     <!-- Codex++ Config -->
@@ -213,13 +222,13 @@
         <div>
           <label>Codex++ 主程序</label>
           <div style="display:flex;gap:var(--space-2);">
-            <input id="cfg-codexpp-path" placeholder="未检测到，请手动选择" style="flex:1;margin-bottom:0;" readonly>
+            <input id="cfg-codexpp-path" placeholder="未检测到 Codex++，请手动选择安装路径" style="flex:1;margin-bottom:0;" readonly>
             <button class="btn btn-secondary" onclick="selectCodexppPath()" style="white-space:nowrap;">选择文件</button>
           </div>
         </div>
         <div>
           <label>Codex++ 管理工具</label>
-          <input id="cfg-codexpp-mgr-path" placeholder="自动关联" style="margin-bottom:0;" readonly>
+          <input id="cfg-codexpp-mgr-path" placeholder="选择主程序后自动填充" style="margin-bottom:0;" readonly>
         </div>
       </div>
       <div class="btn-group" style="margin-top:var(--space-3);">
@@ -241,7 +250,7 @@
   <div class="page" id="page-logs">
     <div class="page-header">
       <h1 class="page-title">运行日志</h1>
-      <p class="page-subtitle">查看代理运行日志，实时追踪请求处理过程</p>
+      <p class="page-subtitle">查看代理运行日志，实时追踪请求处理过程。</p>
     </div>
 
     <!-- Log Config -->
@@ -356,9 +365,16 @@
       </div>
     </div>
 
-    <!-- Check Updates -->
-    <div class="card">
-      <h2>检查更新</h2>
+    <!-- Version Update -->
+    <div class="card" id="settings-update-area">
+      <div class="update-header">
+        <h2>版本更新</h2>
+        <span class="update-status-text" id="settings-update-status">当前已是最新版本</span>
+        <button class="btn-changelog" id="btn-changelog" onclick="showChangelogModal()" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          更新日志
+        </button>
+      </div>
       <div class="update-sources">
         <a class="update-source-card" href="javascript:void(0)" onclick="openExternal('https://github.com/muyun1314/codex-assistant/releases')">
           <svg viewBox="0 0 24 24" fill="currentColor" class="update-source-icon"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
@@ -366,12 +382,12 @@
           <span class="update-source-desc">查看 Releases 页面</span>
         </a>
         <a class="update-source-card" href="javascript:void(0)" onclick="openExternal('https://pan.baidu.com/s/1gZfkkAWmAJiRk-MJTp83uw?pwd=6666')">
-          <svg viewBox="0 0 48 48" fill="none" class="update-source-icon"><path d="M10 32c-2.8 0-5.2-1.8-6-4.4-1.6-.4-2.8-1.8-2.8-3.6 0-2 1.6-3.6 3.6-3.6h.2c.6-3.4 3.6-6 7.2-6 2 0 3.8.8 5.2 2 1.4-2.4 4-4 7-4 4.4 0 8 3.6 8 8v.4c3.6.2 6.6 3.2 6.6 7 0 3.8-3 7-6.8 7.2H14l-4-3z" fill="url(#bd-gradient)"/><path d="M16 20l8 4-8 4z" fill="white" opacity="0.9"/><path d="M26 18l8 6-8 6z" fill="white" opacity="0.6"/><defs><linearGradient id="bd-gradient" x1="0" y1="0" x2="48" y2="48"><stop stop-color="#4e9af1"/><stop offset="1" stop-color="#2b6de8"/></linearGradient></defs></svg>
+          <img class="update-source-icon-img" src="data:image/png;base64,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" alt="百度网盘">
           <span class="update-source-name">百度网盘</span>
           <span class="update-source-desc">提取码: 6666</span>
         </a>
         <a class="update-source-card" href="javascript:void(0)" onclick="openExternal('https://sharer.lanzouv.com/b02k6yyhwh')">
-          <svg viewBox="0 0 48 48" fill="none" class="update-source-icon"><rect x="4" y="4" width="40" height="40" rx="10" fill="url(#lz-gradient)"/><text x="24" y="34" text-anchor="middle" font-size="26" font-weight="800" fill="white" font-family="Arial,sans-serif">L</text><defs><linearGradient id="lz-gradient" x1="0" y1="0" x2="48" y2="48"><stop stop-color="#2196F3"/><stop offset="1" stop-color="#1565C0"/></linearGradient></defs></svg>
+          <img class="update-source-icon-img" src="data:image/png;base64,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" alt="蓝奏云">
           <span class="update-source-name">蓝奏云</span>
           <span class="update-source-desc">密码: 6666</span>
         </a>
@@ -380,12 +396,14 @@
 
     <!-- Backup & Restore -->
     <div class="card">
-      <h2>备份与恢复</h2>
-      <p class="form-hint" style="margin-bottom:var(--space-3);">备份 Codex 配置文件（config.toml、auth.json），修改 Codex 配置前会自动备份</p>
-      <div id="backup-status" style="margin-bottom:var(--space-3);font-size:var(--text-sm);color:var(--text-secondary);"></div>
-      <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-4);">
+      <div class="backup-header">
+        <h2>备份与恢复</h2>
+        <span class="backup-header-desc">备份 Codex 配置文件（config.toml、auth.json），修改 Codex 配置前会自动备份</span>
+      </div>
+      <div class="backup-actions">
         <button class="btn btn-primary" onclick="createBackup()">立即备份</button>
         <button class="btn btn-secondary" onclick="loadBackupList()">刷新列表</button>
+        <span id="backup-status" class="backup-status-inline"></span>
       </div>
       <div id="backup-list" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;"></div>
     </div>
@@ -432,6 +450,11 @@
   </div>
 </div>
 
-<script src="/ui-frontend.js"></script>
+<script src="/common.js"></script>
+<script src="/dashboard.js"></script>
+<script src="/providers.js"></script>
+<script src="/env.js"></script>
+<script src="/backup.js"></script>
+<script src="/settings.js"></script>
 </body>
 </html>

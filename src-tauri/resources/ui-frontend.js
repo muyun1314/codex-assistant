@@ -156,15 +156,22 @@ function escHtml(s) {
 
 function renderMarkdown(md) {
   if (!md) return '';
-  return md
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    .replace(/\n/g, '<br>');
+  var raw = (md + '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  raw = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  var lines = raw.split('\n');
+  var out = '';
+  var inUl = false;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) { if (inUl) { out += '</ul>'; inUl = false; } continue; }
+    if (/^### .+/.test(line)) { if (inUl) { out += '</ul>'; inUl = false; } out += '<h3>' + escHtml(line.slice(4)) + '</h3>'; }
+    else if (/^## .+/.test(line)) { if (inUl) { out += '</ul>'; inUl = false; } out += '<h2>' + escHtml(line.slice(3)) + '</h2>'; }
+    else if (/^# .+/.test(line)) { if (inUl) { out += '</ul>'; inUl = false; } out += '<h1>' + escHtml(line.slice(2)) + '</h1>'; }
+    else if (/^- .+/.test(line)) { if (!inUl) { out += '<ul>'; inUl = true; } out += '<li>' + escHtml(line.slice(2)).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>') + '</li>'; }
+    else { if (inUl) { out += '</ul>'; inUl = false; } out += '<p>' + escHtml(line).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>') + '</p>'; }
+  }
+  if (inUl) { out += '</ul>'; }
+  return out;
 }
 
 function openExternal(url) {
@@ -195,7 +202,7 @@ async function loadStatus() {
           return l.type === 'stderr' || (l.type === 'system' && l.msg.indexOf('退出') !== -1);
         }).slice(-3);
         if (recentErrors.length > 0) {
-          toast('代理异常退出，请查看运行日志', 'error');
+          toast('代理意外停止，请检查运行日志', 'error');
         }
       } catch (e) { /* transient failure, will retry */ }
     }
@@ -300,7 +307,7 @@ function updateCurrentModelDisplay(allModels) {
   if (!currentAppliedModel) {
     cardEl.style.display = 'block';
     if (allModels && allModels.length > 0) {
-      displayEl.innerHTML = '<div class="model-display-value" style="color:var(--text-muted);">请配置codex的供应商和模型信息并应用</div>';
+      displayEl.innerHTML = '<div class="model-display-value" style="color:var(--text-muted);">请配置 Codex 的提供商和模型信息并应用</div>';
     } else {
       displayEl.innerHTML = '<div class="model-display-value" style="color:var(--text-muted);">请至少配置一个提供商</div>';
     }
@@ -456,7 +463,7 @@ async function toggleProxy() {
   var pd = await api('/api/providers');
   var providerCount = (pd.providers || []).length;
   if (providerCount === 0) {
-    toast('请先在"提供商管理"中添加至少一个模型供应商', 'error');
+    toast('请先在"提供商管理"中添加至少一个提供商', 'error');
     return;
   }
 
@@ -556,7 +563,7 @@ async function checkCodexInstalled() {
     if (appBtn) {
       appBtn.disabled = !r.ok;
       var codexType = r.type || 'exe';
-      appBtn.textContent = '启动 Codex 桌面版' + (codexType === 'store' ? ' (商店)' : '');
+      appBtn.textContent = '启动 Codex 桌面版';
       appBtn.title = r.ok ? '启动 Codex 桌面版' : '未安装 Codex';
     }
   }).catch(function(){});
@@ -632,12 +639,13 @@ async function createBackup() {
     var result = await api('/api/codex-backup/create', 'POST');
     if (result.skipped) {
       toast(result.message, 'warning');
-    } else if (result.success) {
-      toast('备份已创建');
-      await loadBackupList();
-    } else {
-      toast(result.error || '备份失败', 'error');
+      return;
     }
+    if (!result.success) {
+      throw new Error(result.error || '备份失败');
+    }
+    toast('备份已创建');
+    await loadBackupList();
   } catch (e) {
     toast('备份失败: ' + e.message, 'error');
   }
@@ -647,12 +655,11 @@ async function restoreBackup(name) {
   if (!confirm('确定要恢复备份 "' + name + '" 吗？\n\n当前配置将被备份，然后恢复为备份版本。\n恢复后需要重启 Codex 才能生效。')) return;
   try {
     var result = await api('/api/codex-backup/restore', 'POST', { name: name });
-    if (result.success) {
-      toast(result.message || '恢复成功');
-      await loadBackupList();
-    } else {
-      toast(result.error || '恢复失败', 'error');
+    if (!result.success) {
+      throw new Error(result.error || '恢复失败');
     }
+    toast(result.message || '恢复成功');
+    await loadBackupList();
   } catch (e) {
     toast('恢复失败: ' + e.message, 'error');
   }
@@ -662,12 +669,11 @@ async function deleteBackup(name) {
   if (!confirm('确定要删除备份 "' + name + '" 吗？')) return;
   try {
     var result = await api('/api/codex-backup/delete', 'POST', { name: name });
-    if (result.success) {
-      toast('备份已删除');
-      await loadBackupList();
-    } else {
-      toast(result.error || '删除失败', 'error');
+    if (!result.success) {
+      throw new Error(result.error || '删除失败');
     }
+    toast('备份已删除');
+    await loadBackupList();
   } catch (e) {
     toast('删除失败: ' + e.message, 'error');
   }
@@ -676,12 +682,11 @@ async function deleteBackup(name) {
 async function toggleLockBackup(name, locked) {
   try {
     var result = await api('/api/codex-backup/lock', 'POST', { name: name, locked: locked });
-    if (result.success) {
-      toast(locked ? '备份已锁定' : '备份已解锁');
-      await loadBackupList();
-    } else {
-      toast(result.error || '操作失败', 'error');
+    if (!result.success) {
+      throw new Error(result.error || '操作失败');
     }
+    toast(locked ? '备份已锁定' : '备份已解锁');
+    await loadBackupList();
   } catch (e) {
     toast('操作失败: ' + e.message, 'error');
   }
@@ -693,12 +698,11 @@ async function renameBackup(name) {
   var fullName = 'codex-backup-' + newName + '.zip';
   try {
     var result = await api('/api/codex-backup/rename', 'POST', { name: name, newName: fullName });
-    if (result.success) {
-      toast('重命名成功');
-      await loadBackupList();
-    } else {
-      toast(result.error || '重命名失败', 'error');
+    if (!result.success) {
+      throw new Error(result.error || '重命名失败');
     }
+    toast('重命名成功');
+    await loadBackupList();
   } catch (e) {
     toast('重命名失败: ' + e.message, 'error');
   }
@@ -743,12 +747,15 @@ async function selectCodexppPath() {
 async function saveCodexppConfig() {
   var codexppPath = document.getElementById('cfg-codexpp-path').value.trim();
   var mgrPath = document.getElementById('cfg-codexpp-mgr-path').value.trim();
-  var result = await api('/api/codexpp-path', 'POST', { codexppPath: codexppPath, codexppMgrPath: mgrPath });
-  if (result && result.success) {
+  try {
+    var result = await api('/api/codexpp-path', 'POST', { codexppPath: codexppPath, codexppMgrPath: mgrPath });
+    if (!result || !result.success) {
+      throw new Error((result && result.error) || '保存失败');
+    }
     toast('Codex++ 路径已保存');
     await checkCodexInstalled();
-  } else {
-    toast((result && result.error) || '保存失败', 'error');
+  } catch (e) {
+    toast('保存失败: ' + e.message, 'error');
   }
 }
 
@@ -897,10 +904,12 @@ function renderProviders() {
             (p.name === currentDefaultProvider ? '<span class="badge badge-primary">默认</span>' : '') +
           '</div>' +
           '<div class="provider-url">' + escHtml(p.base_url) + '</div>' +
-          '<div class="provider-meta">协议：' + escHtml(p.protocol || 'openai') + ' / 模型数：' + (p.models || []).length + ' / Key：' + (p.api_key ? '●●●●●●●' : '未填写') + '</div>' +
+          '<div class="provider-meta">协议：' + escHtml(p.protocol || 'openai') + ' / 模型数：' + (p.models || []).length + ' / Key：' +
+            (p._decrypt_warning ? '<span style="color:var(--error);" title="' + escAttr(p._decrypt_warning) + '">⚠ 需重新输入</span>' :
+             p.api_key ? '●●●●●●●' : '未填写') + '</div>' +
         '</div>' +
         '<div class="provider-actions">' +
-          (p.api_key ? '<button class="btn btn-sm btn-secondary" onclick="testProviderConnection(' + i + ')">测试连接</button>' : '') +
+          (p._decrypt_warning ? '<span style="color:var(--warning);font-size:var(--text-xs);margin-right:var(--space-2);">⚠ 密钥已丢失，请编辑重新输入</span>' : (p.api_key ? '<button class="btn btn-sm btn-secondary" onclick="testProviderConnection(' + i + ')">测试连接</button>' : '')) +
           (p.name !== currentDefaultProvider ? '<button class="btn btn-sm btn-ghost" onclick="setDefaultProvider(\'' + escAttr(p.name) + '\')">设为默认</button>' : '') +
           '<button class="btn btn-sm btn-ghost" onclick="editProvider(' + i + ')">编辑</button>' +
           '<button class="btn btn-sm btn-ghost" onclick="deleteProvider(' + i + ')" style="color:var(--error);">删除</button>' +
@@ -1039,7 +1048,22 @@ async function fetchModels() {
     }
 
     var listEl = document.getElementById('pm-model-list');
-    var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
+    var KNOWN_CTX = {
+      'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576,
+      'deepseek-v4-pro': 1048576, 'deepseek-v4-flash': 1048576,
+      'deepseek-v3': 131072, 'deepseek-r1': 131072,
+      'gpt-4o': 128000, 'gpt-4o-mini': 128000,
+      'gpt-4.1': 1048576, 'gpt-4.1-mini': 1048576,
+      'gpt-5': 409600, 'gpt-5.2': 409600,
+      'gpt-5.4': 272000, 'gpt-5.4-pro': 272000,
+      'gpt-5.4-mini': 400000, 'gpt-5.4-nano': 128000,
+      'o1': 200000, 'o3': 200000, 'o3-mini': 200000, 'o4-mini': 200000,
+      'claude-sonnet-4-20250514': 200000, 'claude-opus-4-20250514': 200000,
+      'claude-haiku-3-5': 200000,
+      'gemini-2.5-pro': 1048576, 'gemini-2.5-flash': 1048576,
+      'qwen3-235b': 131072, 'qwen-max': 131072,
+      'mistral-large': 128000, 'llama-4-maverick': 1048576,
+    };
     var unknownCount = 0;
     var CTX_OPTIONS = [
       { label: '不配置', value: 0 },
@@ -1052,8 +1076,6 @@ async function fetchModels() {
       { label: '500K', value: 500000 },
       { label: '1M', value: 1048576 }
     ];
-    var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
-    var unknownCount = 0;
     listEl.innerHTML = models.map(function (m) {
       var isKnown = KNOWN_CTX.hasOwnProperty(m.id);
       var ctxVal = KNOWN_CTX[m.id] || 0;
@@ -1064,7 +1086,7 @@ async function fetchModels() {
       var warnStyle = isKnown ? '' : 'border-color:var(--warning);';
       return '<label class="checkbox-item" style="align-items:center;' + warnStyle + '">' +
         '<input type="checkbox" value="' + escAttr(m.id) + '" data-name="' + escAttr(m.display_name || m.id) + '" checked>' +
-        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + (isKnown ? '' : ' <span style="color:var(--warning);font-size:10px;">需确认上下文</span>') + '</span>' +
+        '<span style="flex:1;">' + escHtml(m.display_name || m.id) + (isKnown ? '' : ' <span style="color:var(--warning);font-size:10px;">请手动确认模型上下文长度</span>') + '</span>' +
         '<select class="model-ctx-input" data-model="' + escAttr(m.id) + '" style="width:72px;font-size:11px;padding:2px 4px;margin:0;flex:none;">' + opts + '</select>' +
       '</label>';
     }).join('');
@@ -1090,8 +1112,8 @@ async function saveProvider() {
   var base_url = document.getElementById('pm-base').value.trim();
   var api_key = document.getElementById('pm-key').value.trim();
   var protocol = document.getElementById('pm-protocol').value;
-  if (!name) { toast('请填写名称', 'error'); return; }
-  if (!base_url) { toast('请填写 API 地址', 'error'); return; }
+  if (!name) { toast('请先填写名称', 'error'); return; }
+  if (!base_url) { toast('请先填写 API 地址', 'error'); return; }
 
   var models = [];
   var listEl = document.getElementById('pm-model-list');
@@ -1128,7 +1150,7 @@ async function saveProvider() {
 function editProvider(i) { showProviderModal(i); }
 
 async function deleteProvider(i) {
-  if (!confirm('确定删除该提供商及其所有模型？')) return;
+  if (!confirm('确定删除该提供商？其下所有模型配置将一并移除。')) return;
   var deletedName = providers.providers[i] ? providers.providers[i].name : '';
   providers.providers.splice(i, 1);
   await api('/api/providers', 'POST', providers);
@@ -1224,17 +1246,17 @@ function importConfig() {
 var ENV_CONFIG = {
   basic: [
     { key: 'PROXY_PORT', label: '代理端口', type: 'number', placeholder: '4000', desc: '代理监听端口，Codex 需连接此端口' },
-    { key: 'PROXY_AUTH_KEY', label: '访问密钥', type: 'text', placeholder: '留空则不限制访问', desc: '不涉及隐私，仅用于内部加密；首次自动从 Codex 读取并双向同步；若误填提供商 Key 建议刷新', hasRefresh: true, hasSync: true },
+    { key: 'PROXY_AUTH_KEY', label: '访问密钥', type: 'text', placeholder: '留空则不限制访问', desc: '与 Codex 通信的访问密钥。首次从 Codex 同步，修改后也会同步回 Codex，若是在 Codex 中输入了提供商的 API Key，请及时随机刷新防止泄露', hasRefresh: true, hasSync: true },
     { key: 'DEFAULT_PROVIDER', label: '默认提供商', type: 'select-provider', desc: '未指定模型时使用哪个提供商和模型' }
   ],
   advanced: [
     { key: 'UPSTREAM_TIMEOUT_MS', label: '上游超时 (ms)', type: 'number', placeholder: '120000', desc: '上游请求超时时间' },
     { key: 'STORE_TTL_MS', label: '缓存过期 (ms)', type: 'number', placeholder: '3600000', desc: '响应缓存过期时间' },
     { key: 'STORE_MAX', label: '缓存容量', type: 'number', placeholder: '500', desc: '响应缓存最大条目数' },
-    { key: 'MAX_CONSECUTIVE_TOOL_CALLS', label: '工具调用上限', type: 'number', placeholder: '20', desc: '防止工具调用死循环' },
-    { key: 'FETCH_TIMEOUT_MS', label: '抓取超时 (ms)', type: 'number', placeholder: '15000', desc: 'web_fetch 单次请求超时' },
-    { key: 'FETCH_MAX_BODY', label: '抓取上限 (bytes)', type: 'number', placeholder: '50000', desc: 'web_fetch 响应体大小限制' },
-    { key: 'MAX_FETCH_LOOPS', label: '抓取循环上限', type: 'number', placeholder: '5', desc: 'web_fetch 最大嵌套层数' }
+    { key: 'MAX_CONSECUTIVE_TOOL_CALLS', label: '最大工具调用次数', type: 'number', placeholder: '20', desc: '防止模型陷入工具调用循环' },
+    { key: 'FETCH_TIMEOUT_MS', label: '请求超时 (ms)', type: 'number', placeholder: '15000', desc: 'web_fetch 单次请求超时' },
+    { key: 'FETCH_MAX_BODY', label: '响应大小上限', type: 'number', placeholder: '50000', desc: 'web_fetch 响应体大小限制' },
+    { key: 'MAX_FETCH_LOOPS', label: '最大嵌套层数', type: 'number', placeholder: '5', desc: 'web_fetch 最大嵌套层数' }
   ]
 };
 
@@ -1250,11 +1272,27 @@ function generateRandomKey() {
 }
 
 function refreshAuthKey() {
+  // 检查是否有已加密的提供商 API Key（修改密钥会导致这些 Key 不可读）
+  var encryptedCount = 0;
+  (providers.providers || []).forEach(function(p) {
+    if (p._decrypt_warning || (p._decrypt_error)) encryptedCount++;
+  });
+  
+  if (encryptedCount > 0 || (providers.providers || []).length > 0) {
+    var msg = '⚠ 警告：更改加密密钥将导致所有已保存的提供商 API Key 不可读！\n\n';
+    if (encryptedCount > 0) {
+      msg += '当前有 ' + encryptedCount + ' 个提供商的 API Key 已经无法解密。\n';
+      msg += '如你持有旧密钥，可先恢复旧密钥导出配置后再更换。\n\n';
+    }
+    msg += '确定要继续吗？';
+    if (!confirm(msg)) return;
+  }
+  
   var newKey = generateRandomKey();
   document.getElementById('env-PROXY_AUTH_KEY').value = newKey;
   var syncCheckbox = document.getElementById('sync-codex-key');
   if (syncCheckbox) syncCheckbox.checked = true;
-  toast('已生成新密钥，记得保存配置');
+  toast('已生成新密钥，保存后将同步到 Codex 配置', 'info');
 }
 
 async function loadEnv() {
@@ -1263,13 +1301,8 @@ async function loadEnv() {
   window._codexApiKey = d.CODEX_API_KEY || '';
   var form = document.getElementById('env-form');
 
-  // 首次访问自动生成随机密钥
-  if (!d.PROXY_AUTH_KEY) {
-    var newKey = generateRandomKey();
-    d.PROXY_AUTH_KEY = newKey;
-    await api('/api/env', 'PUT', { PROXY_AUTH_KEY: newKey, CODEX_API_KEY: newKey });
-    toast('已自动生成访问密钥');
-  }
+  // 不再自动生成随机密钥 — 密钥统一以 auth.json 为准
+  // 用户通过「随机刷新」按钮手动生成
 
   function renderSection(title, items, note, collapsible) {
     var sectionId = collapsible ? 'env-section-advanced' : 'env-section-basic';
@@ -1337,7 +1370,7 @@ async function loadEnv() {
   }
 
   var html = renderSection('基础配置', ENV_CONFIG.basic);
-  html += renderSection('高级配置', ENV_CONFIG.advanced, '通常无需修改，除非你明确知道自己在做什么', true);
+  html += renderSection('高级配置', ENV_CONFIG.advanced, '以下为高级选项，一般保持默认即可', true);
   form.innerHTML = html;
 }
 

@@ -5,7 +5,7 @@ import path from "node:path";
 import { execFile as execFileCb } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { tryDecryptApiKey } from "./src/crypto-store.mjs";
+import { tryDecryptApiKey, getMachineKey } from "./src/crypto-store.mjs";
 import { parseCsv, normalizeModelId, contentHasUrl, sendJson, fetchWithTimeout, readJsonBody, sendUpstreamError, wireClientCancel, clientGone, writeWithBackpressure } from "./src/shared.mjs";
 import { uid, applyEffortTranslation, normalizeMessages, KNOWN_CONTEXT_WINDOWS, AVG_TOKENS_PER_MESSAGE, DEFAULT_CONTEXT_WINDOW, getModelContextWindow, calcMaxMessages, normalizeInputToArray, translateUsage, chatCompletionToResponse } from "./src/protocol.mjs";
 import {
@@ -381,7 +381,8 @@ function loadDynamicProviders() {
     var data = JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf-8'));
     var providers = {};
     var providerNames = [];
-    var masterKey = (process.env.PROXY_AUTH_KEY || '').trim();
+    var masterKey = getMachineKey();
+    if (!masterKey) masterKey = (process.env.PROXY_AUTH_KEY || '').trim();
     
     for (var i = 0; i < (data.providers || []).length; i++) {
       var p = data.providers[i];
@@ -1577,16 +1578,24 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && (req.url === "/v1/models" || req.url === "/models")) {
     try {
       const models = await fetchUpstreamModels();
+      const enriched = models.map(m => {
+        const ctx = MODEL_CONTEXT_WINDOWS.get(m.id);
+        return ctx ? { ...m, context_window: ctx } : m;
+      });
       sendJson(res, 200, {
         object: "list",
-        data: models,
+        data: enriched,
         default_provider: getFallbackProvider(),
       });
     } catch (err) {
       log.warn(`[models] upstream fetch failed, falling back to static catalog: ${err.message}`);
+      const enriched = modelCatalog.map(m => {
+        const ctx = MODEL_CONTEXT_WINDOWS.get(m.id);
+        return ctx ? { ...m, context_window: ctx } : m;
+      });
       sendJson(res, 200, {
         object: "list",
-        data: modelCatalog,
+        data: enriched,
         default_provider: getFallbackProvider(),
       });
     }

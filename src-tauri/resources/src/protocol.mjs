@@ -4,16 +4,23 @@
 import crypto from "node:crypto";
 
 // ---- Known model context windows (tokens) ----
-// Shared between proxy.mjs and this module.
+// Single source of truth for model context window sizes.
+// Must stay in sync with providers.js KNOWN_CTX and ui-server.mjs KNOWN_CTX.
 export const KNOWN_CONTEXT_WINDOWS = {
   'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576,
-  'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072,
-  'deepseek-v3': 131072, 'deepseek-chat': 131072,
-  'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'gpt-4-turbo': 128000,
-  'gpt-4': 8192, 'gpt-3.5-turbo': 16385,
-  'o1': 200000, 'o1-mini': 128000, 'o3-mini': 200000,
-  'claude-sonnet-4-20250514': 200000, 'claude-3-5-sonnet': 200000,
-  'claude-3-haiku': 200000,
+  'deepseek-v4-pro': 1048576, 'deepseek-v4-flash': 1048576,
+  'deepseek-v3': 131072, 'deepseek-r1': 131072,
+  'gpt-4o': 128000, 'gpt-4o-mini': 128000,
+  'gpt-4.1': 1048576, 'gpt-4.1-mini': 1048576,
+  'gpt-5': 409600, 'gpt-5.2': 409600,
+  'gpt-5.4': 272000, 'gpt-5.4-pro': 272000,
+  'gpt-5.4-mini': 400000, 'gpt-5.4-nano': 128000,
+  'o1': 200000, 'o3': 200000, 'o3-mini': 200000, 'o4-mini': 200000,
+  'claude-sonnet-4-20250514': 200000, 'claude-opus-4-20250514': 200000,
+  'claude-haiku-3-5': 200000,
+  'gemini-2.5-pro': 1048576, 'gemini-2.5-flash': 1048576,
+  'qwen3-235b': 131072, 'qwen-max': 131072,
+  'mistral-large': 128000, 'llama-4-maverick': 1048576,
 };
 
 export const AVG_TOKENS_PER_MESSAGE = 800;

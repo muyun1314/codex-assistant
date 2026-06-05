@@ -28,3 +28,8 @@ logo/
 .cargo/
 .workbuddy/
 backup/
+codex-assistant-backup-*.tar.gz
+交接清单-*.md
+踩坑记录-*.md
+tests/download/
+.workbuddy-plugins/

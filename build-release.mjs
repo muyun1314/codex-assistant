@@ -91,12 +91,11 @@ fs.mkdirSync(portableDir, { recursive: true });
 fs.copyFileSync(releaseExe, path.join(portableDir, 'codex-assistant.exe'));
 console.log('  Copied: codex-assistant.exe');
 
-// 复制资源文件夹（排除 node 二进制，太大了）
+// 复制资源文件夹
 const resourceDest = path.join(portableDir, 'resources');
 if (!fs.existsSync(resourceDest)) fs.mkdirSync(resourceDest, { recursive: true });
 const resourceEntries = fs.readdirSync(RESOURCES_DIR, { withFileTypes: true });
 for (const entry of resourceEntries) {
-  if (entry.name === 'node') continue; // node.exe 已嵌入 Tauri bundle
   const srcPath = path.join(RESOURCES_DIR, entry.name);
   const destPath = path.join(resourceDest, entry.name);
   if (entry.isDirectory()) {
