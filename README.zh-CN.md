@@ -8,7 +8,7 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-18%2B-339933?logo=node.js&logoColor=white" alt="Node.js 18+"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="Zero Dependencies">
-  <img src="https://img.shields.io/github/v/release/wujfeng712-ui/Codex-Assistant?label=version" alt="Release version">
+  <img src="https://img.shields.io/github/v/release/muyun1314/codex-assistant?label=version" alt="Release version">
 </p>
 
 <p align="center">
@@ -26,12 +26,13 @@
 Codex CLI 使用 **OpenAI Responses API**，而 DeepSeek 和 MiMo 使用 **Chat Completions API**。  
 Codex Assistant 在两者之间**双向转换** — 包含流式 SSE、工具调用与思考模式回合 — 让你在不修改 Codex 客户端的前提下，使用任意支持的模型。
 
-**新增功能（v1.1.0+）：**
-- 🖥️ **Web 可视化管理界面** — 提供商管理、环境变量配置、日志查看、一键启停
-- 💻 **桌面应用版** — C# 启动器 + Edge --app 模式，免安装，解压即用
-- 🔐 **API Key 加密存储** — AES-256-GCM + PBKDF2，磁盘上无明文密钥
-- 🔄 **配置导入/导出** — 跨设备迁移配置（含密钥加密迁移）
-- 🔔 **自动更新** — 检测 GitHub Releases 新版本并自动升级
+**最新功能（v1.2.7）：**
+- 🔐 **机器码加密** — API Key 加密改用硬件机器码，与访问密钥独立，修改访问密钥不再影响已保存的 Key
+- 🧩 **前端模块化** — `ui-frontend.js` 拆分为 6 个独立模块，便于维护
+- 🌓 **系统主题跟随** — 支持浅色/深色/跟随系统三种模式
+- 📡 **版本检查优化** — 浏览器直连 GitHub API，hosts 修改用户也能正常检测更新
+- 🔧 **deepseek-v4-pro 1M 上下文** — 更新为 1M tokens
+- 🐛 **多项 Bug 修复** — API Key 丢失问题彻底解决、加密机制重构
 
 ---
 
@@ -39,7 +40,7 @@ Codex Assistant 在两者之间**双向转换** — 包含流式 SSE、工具调
 
 ### 方式一：桌面应用（推荐，Windows）
 
-1. 从 [Releases](https://github.com/wujfeng712-ui/Codex-Assistant/releases) 页面下载 `CodexAssistant.zip`
+1. 从 [Releases](https://github.com/muyun1314/codex-assistant/releases) 页面下载 `CodexAssistant.zip`
 2. 解压到任意目录（无需安装）
 3. 双击 `CodexAssistant.exe` 启动
 4. 首次启动会自动生成访问密钥，并在浏览器中打开管理界面
@@ -49,8 +50,8 @@ Codex Assistant 在两者之间**双向转换** — 包含流式 SSE、工具调
 ### 方式二：Web UI 版（手动启动）
 
 ```bash
-git clone https://github.com/wujfeng712-ui/Codex-Assistant.git
-cd Codex-Assistant
+git clone https://github.com/muyun1314/codex-assistant.git
+cd codex-assistant
 
 # 双击运行（Windows）
 启动UI.cmd
@@ -167,7 +168,7 @@ cd Codex-Assistant
 
 ## 🔔 自动更新
 
-系统每次启动 Web UI 时自动检查 [GitHub Releases](https://github.com/wujfeng712-ui/Codex-Assistant/releases) 是否有新版本：
+系统每次启动 Web UI 时自动检查 [GitHub Releases](https://github.com/muyun1314/codex-assistant/releases) 是否有新版本：
 
 1. 点击侧边栏底部「检查版本更新」
 2. 若有新版本，点击「一键更新」
@@ -419,7 +420,7 @@ MODEL_CATALOG_PATH=~/.codex/proxy-models.json
 ## 📦 项目结构
 
 ```
-Codex-Assistant/
+codex-assistant/
 ├── proxy.mjs              # 代理核心（路由、协议转换、鉴权、流处理）
 ├── ui-server.mjs         # Web UI 后端（提供商 CRUD、进程管理、静态服务）
 ├── ui-frontend.html      # 管理界面 HTML
@@ -532,5 +533,5 @@ MIT — 详见 [LICENSE](./LICENSE)。
 ---
 
 <p align="center">
-  <i>用 ❤️ 制作 by <a href="https://github.com/wujfeng712-ui">wujfeng712-ui</a></i>
+  <i>用 ❤️ 制作 by <a href="https://github.com/muyun1314">muyun1314</a></i>
 </p>

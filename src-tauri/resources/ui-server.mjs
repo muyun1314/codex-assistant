@@ -12,7 +12,7 @@ import {
 } from './src/shared.mjs';
 import {
   isEncrypted, encryptApiKeyWithPrefix, tryDecryptApiKey,
-  migrateToEncrypted
+  migrateToEncrypted, getMachineKey, migrateProvidersToMachineKey
 } from './src/crypto-store.mjs';
 
 var UI_PORT = parseInt(process.env.UI_PORT, 10) || 8788;
@@ -221,6 +221,54 @@ function initProxyAuthKey() {
 }
 initProxyAuthKey();
 
+// 工厂启动时自动将旧的 PROXY_AUTH_KEY 加密的 provider 密钥迁移到机器码加密
+function migrateToMachineKeyIfNeeded() {
+  try {
+    if (!fs.existsSync(PROVIDERS_FILE)) return;
+    
+    var machineKey = getMachineKey();
+    if (!machineKey) {
+      console.log('[ui] Migration: machine key unavailable, skipping');
+      return;
+    }
+    
+    var data = JSON.parse(fs.readFileSync(PROVIDERS_FILE, 'utf8'));
+    if (!data.providers || data.providers.length === 0) return;
+    
+    // Check if already using machine key
+    var firstEncrypted = data.providers.find(function(p) {
+      return p.api_key && isEncrypted(p.api_key);
+    });
+    if (firstEncrypted) {
+      var testResult = tryDecryptApiKey(firstEncrypted.api_key, machineKey);
+      if (testResult.key !== null) {
+        // Already using machine key, no migration needed
+        return;
+      }
+    }
+    
+    // Try to migrate using the old PROXY_AUTH_KEY
+    var env = readEnv();
+    var oldMasterKey = (env.PROXY_AUTH_KEY || '').trim();
+    if (!oldMasterKey) {
+      console.log('[ui] Migration: no legacy master key available');
+      return;
+    }
+    
+    var result = migrateProvidersToMachineKey(data.providers, oldMasterKey);
+    if (result.migrated > 0) {
+      fs.writeFileSync(PROVIDERS_FILE, JSON.stringify({ providers: result.providers }, null, 2));
+      console.log('[ui] Migration: re-encrypted ' + result.migrated + ' providers to machine key');
+    }
+    if (result.failed > 0) {
+      console.log('[ui] Migration: ' + result.failed + ' providers could not be migrated (keys may need manual re-entry)');
+    }
+  } catch (e) {
+    console.error('[ui] Migration error:', e.message);
+  }
+}
+migrateToMachineKeyIfNeeded();
+
 // ==================== .env 读写（只保留真正全局的变量）====================
 // GLOBAL_ENV_KEYS defines the allowed keys for .env (non-provider settings).
 // Provider API keys now live exclusively in provider-configs.json (encrypted).
@@ -299,9 +347,10 @@ function writeEnv(envObj) {
 var PROVIDERS_FILE = path.join(USER_DIR, 'provider-configs.json');
 
 function getMasterKey() {
-  // Derive master encryption key from the proxy auth key
-  var env = readEnv();
-  return (env.PROXY_AUTH_KEY || '').trim() || null;
+  // Encryption master key is now derived from the machine's hardware fingerprint,
+  // independent of PROXY_AUTH_KEY. This means changing the access key no longer
+  // breaks encrypted API Key storage.
+  return getMachineKey();
 }
 
 function readProviders() {
@@ -319,7 +368,11 @@ function readProviders() {
       }
       if (result.wasEncrypted) {
         console.error('[ui] Failed to decrypt key for provider "' + p.name + '" — master key may have changed. Provider will appear without API key.');
-        return Object.assign({}, p, { api_key: '', _decrypt_error: result.error });
+        return Object.assign({}, p, {
+          api_key: '',
+          _decrypt_error: result.error,
+          _decrypt_warning: '加密环境发生改变，密钥无法解密，请编辑重新输入'
+        });
       }
       return p;
     });
@@ -330,23 +383,10 @@ function readProviders() {
 
 function writeProviders(data) {
   var masterKey = getMasterKey();
-  var toSave = data;
-  
-  // Auto-generate PROXY_AUTH_KEY if not yet set
-  if (!masterKey && data.providers && data.providers.length > 0) {
-    var hasKeys = data.providers.some(function(p) { return p.api_key && !isEncrypted(p.api_key); });
-    if (hasKeys) {
-      masterKey = 'sk-' + crypto.randomBytes(24).toString('hex');
-      var env = readEnv();
-      env.PROXY_AUTH_KEY = masterKey;
-      writeEnv(env);
-      console.log('[ui] Auto-generated PROXY_AUTH_KEY for API key encryption');
-    }
-  }
   
   // Encrypt API keys before saving
   if (masterKey && data.providers) {
-    toSave = {
+    var toSave = {
       providers: data.providers.map(function(p) {
         if (!p.api_key) return p;
         if (isEncrypted(p.api_key)) return p;
@@ -360,9 +400,10 @@ function writeProviders(data) {
         }
       })
     };
+    fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(toSave, null, 2));
+  } else {
+    fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(data, null, 2));
   }
-  
-  fs.writeFileSync(PROVIDERS_FILE, JSON.stringify(toSave, null, 2));
 }
 
 
@@ -598,15 +639,17 @@ async function syncCodexConfig() {
   const codexConfig = readCodexConfig();
   const parsed = parseToml(codexConfig);
 
-  // 1. 同步访问密钥（双向同步，Codex 优先）
+  // 1. 同步访问密钥（CA ↔ Codex 双向同步，减少对 Codex 的配置改动）
   const proxyKey = env.PROXY_AUTH_KEY || '';
   const codexKey = auth.OPENAI_API_KEY || '';
 
   if (codexKey && codexKey !== proxyKey) {
     env.PROXY_AUTH_KEY = codexKey;
     writeEnv(env);
-    syncResults.push('已从 Codex 同步访问密钥');
-  } else if (proxyKey && proxyKey !== codexKey) {
+    syncResults.push('已同步访问密钥到 CA');
+  }
+
+  if (proxyKey && proxyKey !== codexKey) {
     auth.OPENAI_API_KEY = proxyKey;
     writeCodexAuth(auth);
     syncResults.push('已同步访问密钥到 Codex');
@@ -1400,6 +1443,16 @@ const server = http.createServer(async (req, res) => {
     } else { res.writeHead(404); res.end(); }
     return;
   }
+  // Module JS files
+  var staticModules = ['common.js', 'dashboard.js', 'providers.js', 'env.js', 'backup.js', 'settings.js'];
+  if (staticModules.indexOf(pathname.slice(1)) !== -1) {
+    const fp = path.join(PROJECT_DIR, pathname.slice(1));
+    if (fs.existsSync(fp)) {
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
+      res.end(fs.readFileSync(fp));
+    } else { res.writeHead(404); res.end(); }
+    return;
+  }
   if (pathname === '/ui-favicon.ico') {
     const fp = path.join(PROJECT_DIR, 'ui-favicon.ico');
     if (fs.existsSync(fp)) {
@@ -1572,6 +1625,7 @@ const server = http.createServer(async (req, res) => {
         delete data.CODEX_API_KEY;
       }
       writeEnv(data);
+      
       return sendJson(res, 200, { success: true });
     } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
@@ -2196,17 +2250,19 @@ const server = http.createServer(async (req, res) => {
     try {
       const { getCurrentVersion, checkForUpdates, compareVersions } = await import('./src/updater.mjs');
       const current = getCurrentVersion(PROJECT_DIR);
-      const latest = await checkForUpdates(current.version);
+      const latest = await checkForUpdates();
       
-      if (!latest) {
+      if (latest.error) {
+        // Update check failed — return the error so the frontend can show it
         return sendJson(res, 200, { 
           hasUpdate: false, 
           currentVersion: current.version,
-          message: 'Unable to check for updates or no release available'
+          checkError: latest.error,
+          message: '无法检查更新'
         });
       }
 
-      const hasUpdate = compareVersions(current.version, latest.version) < 0;
+      const hasUpdate = compareVersions(current.version, latest.version) > 0 ? false : (compareVersions(current.version, latest.version) < 0);
       
       return sendJson(res, 200, {
         hasUpdate,
@@ -2219,7 +2275,7 @@ const server = http.createServer(async (req, res) => {
         releaseUrl: latest.htmlUrl
       });
     } catch (err) {
-      return sendJson(res, 500, { error: err.message });
+      return sendJson(res, 200, { hasUpdate: false, currentVersion: '?', checkError: err.message });
     }
   }
 

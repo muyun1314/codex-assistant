@@ -1,6 +1,6 @@
 [package]
 name = "codex-assistant"
-version = "1.2.6"
+version = "1.2.7"
 description = "Codex Assistant - Local AI Proxy with WebView UI"
 authors = ["muyun1314"]
 edition = "2021"

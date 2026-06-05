@@ -897,10 +897,12 @@ function renderProviders() {
             (p.name === currentDefaultProvider ? '<span class="badge badge-primary">默认</span>' : '') +
           '</div>' +
           '<div class="provider-url">' + escHtml(p.base_url) + '</div>' +
-          '<div class="provider-meta">协议：' + escHtml(p.protocol || 'openai') + ' / 模型数：' + (p.models || []).length + ' / Key：' + (p.api_key ? '●●●●●●●' : '未填写') + '</div>' +
+          '<div class="provider-meta">协议：' + escHtml(p.protocol || 'openai') + ' / 模型数：' + (p.models || []).length + ' / Key：' +
+            (p._decrypt_warning ? '<span style="color:var(--error);" title="' + escAttr(p._decrypt_warning) + '">⚠ 需重新输入</span>' :
+             p.api_key ? '●●●●●●●' : '未填写') + '</div>' +
         '</div>' +
         '<div class="provider-actions">' +
-          (p.api_key ? '<button class="btn btn-sm btn-secondary" onclick="testProviderConnection(' + i + ')">测试连接</button>' : '') +
+          (p._decrypt_warning ? '<span style="color:var(--warning);font-size:var(--text-xs);margin-right:var(--space-2);">⚠ 密钥已丢失，请编辑重新输入</span>' : (p.api_key ? '<button class="btn btn-sm btn-secondary" onclick="testProviderConnection(' + i + ')">测试连接</button>' : '')) +
           (p.name !== currentDefaultProvider ? '<button class="btn btn-sm btn-ghost" onclick="setDefaultProvider(\'' + escAttr(p.name) + '\')">设为默认</button>' : '') +
           '<button class="btn btn-sm btn-ghost" onclick="editProvider(' + i + ')">编辑</button>' +
           '<button class="btn btn-sm btn-ghost" onclick="deleteProvider(' + i + ')" style="color:var(--error);">删除</button>' +
@@ -1052,8 +1054,6 @@ async function fetchModels() {
       { label: '500K', value: 500000 },
       { label: '1M', value: 1048576 }
     ];
-    var KNOWN_CTX = { 'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576, 'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072, 'deepseek-v3': 131072, 'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'o1': 200000, 'o3-mini': 200000, 'claude-sonnet-4-20250514': 200000 };
-    var unknownCount = 0;
     listEl.innerHTML = models.map(function (m) {
       var isKnown = KNOWN_CTX.hasOwnProperty(m.id);
       var ctxVal = KNOWN_CTX[m.id] || 0;
@@ -1224,7 +1224,7 @@ function importConfig() {
 var ENV_CONFIG = {
   basic: [
     { key: 'PROXY_PORT', label: '代理端口', type: 'number', placeholder: '4000', desc: '代理监听端口，Codex 需连接此端口' },
-    { key: 'PROXY_AUTH_KEY', label: '访问密钥', type: 'text', placeholder: '留空则不限制访问', desc: '不涉及隐私，仅用于内部加密；首次自动从 Codex 读取并双向同步；若误填提供商 Key 建议刷新', hasRefresh: true, hasSync: true },
+    { key: 'PROXY_AUTH_KEY', label: '访问密钥', type: 'text', placeholder: '留空则不限制访问', desc: '与 Codex 通信的访问密钥。首次从 Codex 同步，修改后也会同步回 Codex，若是在codex中输入了提供商的API Key，请及时随机刷新防止泄露', hasRefresh: true, hasSync: true },
     { key: 'DEFAULT_PROVIDER', label: '默认提供商', type: 'select-provider', desc: '未指定模型时使用哪个提供商和模型' }
   ],
   advanced: [
@@ -1250,11 +1250,27 @@ function generateRandomKey() {
 }
 
 function refreshAuthKey() {
+  // 检查是否有已加密的提供商 API Key（修改密钥会导致这些 Key 不可读）
+  var encryptedCount = 0;
+  (providers.providers || []).forEach(function(p) {
+    if (p._decrypt_warning || (p._decrypt_error)) encryptedCount++;
+  });
+  
+  if (encryptedCount > 0 || (providers.providers || []).length > 0) {
+    var msg = '⚠ 警告：更改加密密钥将导致所有已保存的提供商 API Key 不可读！\n\n';
+    if (encryptedCount > 0) {
+      msg += '当前有 ' + encryptedCount + ' 个提供商的 API Key 已经无法解密。\n';
+      msg += '如你持有旧密钥，可先恢复旧密钥导出配置后再更换。\n\n';
+    }
+    msg += '确定要继续吗？';
+    if (!confirm(msg)) return;
+  }
+  
   var newKey = generateRandomKey();
   document.getElementById('env-PROXY_AUTH_KEY').value = newKey;
   var syncCheckbox = document.getElementById('sync-codex-key');
   if (syncCheckbox) syncCheckbox.checked = true;
-  toast('已生成新密钥，记得保存配置');
+  toast('已生成新密钥，保存后将同步到 Codex 配置', 'info');
 }
 
 async function loadEnv() {

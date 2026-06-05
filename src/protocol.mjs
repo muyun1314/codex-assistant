@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 // Shared between proxy.mjs and this module.
 export const KNOWN_CONTEXT_WINDOWS = {
   'mimo-v2.5': 1048576, 'mimo-v2.5-pro': 1048576,
-  'deepseek-v4-pro': 131072, 'deepseek-v4-flash': 131072,
+  'deepseek-v4-pro': 1048576, 'deepseek-v4-flash': 131072,
   'deepseek-v3': 131072, 'deepseek-chat': 131072,
   'gpt-4o': 128000, 'gpt-4o-mini': 128000, 'gpt-4-turbo': 128000,
   'gpt-4': 8192, 'gpt-3.5-turbo': 16385,

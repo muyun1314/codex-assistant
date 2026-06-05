@@ -42,7 +42,7 @@ Codex Assistant traduce entre ambos en las dos direcciones — incluyendo SSE en
 ### 1. Configurar
 
 ```bash
-git clone https://github.com/wujfeng712-ui/Codex Assistant.git
+git clone https://github.com/muyun1314/Codex Assistant.git
 cd Codex Assistant
 cp env.example .env
 ```
