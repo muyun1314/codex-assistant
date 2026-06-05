@@ -605,10 +605,23 @@ function rewriteCodexConfig(model, ctxWindow, proxyPort) {
   parts.push('wire_api = "responses"');
   parts.push('requires_openai_auth = true');
 
-  // 追加 Codex 原生 section
+  // 追加 Codex 原生 section，并同步 CA 管理的 model 相关 key
+  // 确保 Codex CLI 和桌面版使用统一的模型配置
+  var syncKeys = {
+    'model': JSON.stringify(model),
+    'model_provider': '"local_proxy"',
+    'model_context_window': ctxWindow,
+    'max_tokens': '4096'
+  };
   for (var j = 0; j < codexSections.length; j++) {
+    var section = codexSections[j];
+    // 在该 section 内替换匹配的 key（忽略大小写，允许行首空格）
+    for (var sk in syncKeys) {
+      var re = new RegExp('^(\\s*' + sk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*=\\s*).+', 'gim');
+      section = section.replace(re, '$1' + syncKeys[sk]);
+    }
     parts.push('');
-    parts.push(codexSections[j]);
+    parts.push(section);
   }
 
   fs.writeFileSync(cfgPath, parts.join('\n') + '\n');
