@@ -1,0 +1,45 @@
+{
+  "name": "codex-assistant",
+  "version": "1.3.0",
+  "description": "Zero-dependency local proxy: translates OpenAI Responses API to Chat Completions for DeepSeek, Xiaomi MiMo, and OpenAI behind a single base_url — Codex Assistant",
+  "main": "proxy.mjs",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muyun1314/codex-assistant.git"
+  },
+  "scripts": {
+    "start": "node --env-file=user/.env proxy.mjs",
+    "smoke": "./scripts/smoke.sh",
+    "test": "node --test tests/protocol.test.mjs",
+    "version:sync": "node sync-version.mjs",
+    "build:release": "node build-release.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "node sync-version.mjs && tauri dev",
+    "tauri:build": "node sync-version.mjs && tauri build",
+    "tauri:build:debug": "node sync-version.mjs && tauri build --debug"
+  },
+  "keywords": [
+    "codex",
+    "codex-cli",
+    "deepseek",
+    "deepseek-v4",
+    "mimo",
+    "openai",
+    "proxy",
+    "responses-api",
+    "chat-completions"
+  ],
+  "license": "MIT",
+  "directories": {
+    "test": "tests"
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/muyun1314/codex-assistant/issues"
+  },
+  "homepage": "https://github.com/muyun1314/codex-assistant#readme",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

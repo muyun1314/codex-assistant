@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+log/
+codex-assistant-log-*.txt
+
+# User data (privacy)
+user/
+backup/
+.env
+.ui-port
+
+# Build output
+dist/
+src-tauri/target/
+src-tauri/resources/node/
+
+# IDE and OS
+.DS_Store
+.claude/
+.code-review/
+.cargo/
+
+# WorkBuddy
+.workbuddy/
+.workbuddy-plugins/
+
+# Temp files
+.update-*/
+release-temp/
+_codex-snapshot/
+temp-pp/
+.backup-pre-fix/
+.sisyphus/
+favicon-base64.txt
+
+# Generated files
+*.zip
+*.exe
+*.ico
+*.tar.gz
+
+# Scripts (not for distribution)
+build-portable.bat
+set-codex-chinese.cmd
+启动codex-assistant.cmd
+启动开发版.cmd
+
+# Release notes (keep CHANGELOG.md)
+release-notes.md
+CHANGELOG-*.md
+
+# Tests
+tests/download/
+
+# Personal notes
+交接清单-*.md
+踩坑记录-*.md
+
+# Misc
+zh-CN.pak
+dev.cmd
+logo/
+overview.md

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "Codex Assistant",
+  "version": "1.3.0",
+  "identifier": "com.muyun.codex-assistant",
+  "build": {
+    "beforeBuildCommand": "echo Build frontend skipped",
+    "beforeDevCommand": "echo Dev frontend skipped",
+    "frontendDist": "frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Codex Assistant",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "decorations": true,
+        "resizable": true,
+        "transparent": false,
+        "visible": false,
+        "url": "index.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/node/node.exe",
+      "resources/proxy.mjs",
+      "resources/ui-server.mjs",
+      "resources/ui-frontend.html",
+      "resources/ui-frontend.css",
+      "resources/ui-frontend.js",
+      "resources/common.js",
+      "resources/dashboard.js",
+      "resources/providers.js",
+      "resources/env.js",
+      "resources/backup.js",
+      "resources/settings.js",
+      "resources/ui-favicon.ico",
+      "resources/src/crypto-store.mjs",
+      "resources/src/operation-logger.mjs",
+      "resources/src/protocol.mjs",
+      "resources/src/rate-limit.mjs",
+      "resources/src/shared.mjs",
+      "resources/src/store.mjs",
+      "resources/src/streaming.mjs",
+      "resources/src/updater.mjs",
+      "resources/src/web-fetch.mjs",
+      "resources/version.json",
+      "resources/env.example",
+      "resources/proxy-models.example.json",
+      "resources/LICENSE",
+      "resources/README.md",
+      "resources/README.zh-CN.md"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "displayLanguageSelector": true,
+        "languages": [
+          "SimpChinese",
+          "English"
+        ]
+      }
+    }
+  }
+}

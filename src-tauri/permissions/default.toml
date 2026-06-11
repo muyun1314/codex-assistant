@@ -1,0 +1,28 @@
+[default]
+description = "Default permissions for Codex Assistant"
+permissions = ["allow-get-node-status", "allow-restart-node", "allow-set-close-behavior", "allow-minimize-to-tray", "allow-force-close"]
+
+[[permission]]
+identifier = "allow-get-node-status"
+description = "Allows calling the get_node_status command"
+commands.allow = ["get_node_status"]
+
+[[permission]]
+identifier = "allow-restart-node"
+description = "Allows calling the restart_node command"
+commands.allow = ["restart_node"]
+
+[[permission]]
+identifier = "allow-set-close-behavior"
+description = "Allows calling the set_close_behavior command"
+commands.allow = ["set_close_behavior"]
+
+[[permission]]
+identifier = "allow-minimize-to-tray"
+description = "Allows calling the minimize_to_tray command"
+commands.allow = ["minimize_to_tray"]
+
+[[permission]]
+identifier = "allow-force-close"
+description = "Allows calling the force_close command"
+commands.allow = ["force_close"]

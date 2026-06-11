@@ -1,0 +1,2 @@
+# Permission: allow-restart-node
+# Allows calling the restart_node command
