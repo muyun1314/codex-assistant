@@ -298,7 +298,22 @@ export function responsesRequestToChatCompletions(body, provider, reasoningByCal
   if (merged.length > MAX_MESSAGES) {
     const head = merged.slice(0, 2);
     let tail = merged.slice(-(MAX_MESSAGES - 3));
-    while (tail.length > 0 && tail[0].role === "tool") tail.shift();
+    // Safe removal of leading tool messages: only remove if no assistant tool_call
+    // in the tail still expects a response for that tool_call_id.
+    while (tail.length > 0 && tail[0].role === "tool") {
+      const toolMsg = tail[0];
+      let hasMatchingAssistant = false;
+      for (let i = 0; i < tail.length; i++) {
+        if (tail[i].role === "assistant" && Array.isArray(tail[i].tool_calls)) {
+          if (tail[i].tool_calls.some((tc) => tc.id === toolMsg.tool_call_id)) {
+            hasMatchingAssistant = true;
+            break;
+          }
+        }
+      }
+      if (hasMatchingAssistant) break; // keep this tool response
+      tail.shift();
+    }
     finalMessages = [
       ...head,
       { role: "user", content: "[Earlier conversation trimmed. Do not repeat previous statements or tool calls you already made. Continue with the current task. If you have enough information, respond to the user instead of making more tool calls.]" },
