@@ -218,7 +218,6 @@ Codex-Assistant/
 | `401 Unauthorized` | 确认 Codex auth.json 与代理密钥一致 |
 | 代理启动失败 | 检查端口占用，查看日志 |
 | API Key 无法解密 | 在提供商管理中重新输入（换了电脑需要重新配置） |
-| 上下文丢失 | 检查裁剪配置，可调大 keepToolRounds |
 
 ---
 
