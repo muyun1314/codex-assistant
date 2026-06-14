@@ -1,6 +1,6 @@
 {
   "name": "codex-assistant",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Zero-dependency local proxy: translates OpenAI Responses API to Chat Completions for DeepSeek, Xiaomi MiMo, and OpenAI behind a single base_url — Codex Assistant",
   "main": "proxy.mjs",
   "type": "module",

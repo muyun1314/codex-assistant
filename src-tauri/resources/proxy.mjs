@@ -1463,16 +1463,6 @@ async function handleOaiCompatResponses(req, provider, body, res, originalInput,
   diag.upstreamModel = chatReq.model;
 
   var hardBreakerFired = false;
-  if (originalPreviousResponseId) {
-    var prevStored = touchResponse(originalPreviousResponseId);
-    var consecutiveTc = prevStored?.consecutiveToolCalls || 0;
-    if (consecutiveTc >= MAX_CONSECUTIVE_TOOL_CALLS + 3) {
-      log.warn("[proxy] HARD CIRCUIT BREAKER: stripping all tools to force text response");
-      delete chatReq.tools;
-      delete chatReq.tool_choice;
-      hardBreakerFired = true;
-    }
-  }
 
   // 消息上下文裁剪：删除旧的 tool-call 日志，保留最近 N 轮
   var trimConfig = loadTrimConfig();

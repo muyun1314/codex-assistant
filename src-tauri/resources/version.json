@@ -1,6 +1,6 @@
 {
-  "version": "1.3.2",
-  "build": 2,
-  "releasedAt": "2026-06-12",
-  "changelog": "API Key加密改用机器码、暗黑主题、上下文裁剪、进程管理优化、跨机器兼容性修复"
+  "version": "1.3.3",
+  "build": 3,
+  "releasedAt": "2026-06-14",
+  "changelog": "CRT静态链接、WebView2启动检测、删除硬裁剪熔断器、保存对话框、合并冗余文件"
 }
