@@ -242,7 +242,43 @@ fn cleanup_orphaned_processes() {
     });
 }
 
+/// Check WebView2 runtime environment before creating Tauri window.
+/// If WebView2 is missing, pop up a message box and open the download page.
+fn check_runtime_environment() {
+    let has_webview2 = check_webview2();
+    if !has_webview2 {
+        // Use PowerShell to show a message box and open the download URL
+        let ps_script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName Microsoft.VisualBasic
+$msg = "Codex Assistant 需要 Microsoft Edge WebView2 运行时才能运行。`n`n是否现在打开下载页面安装？"
+$result = [Microsoft.VisualBasic.Interaction]::MsgBox($msg, 'YesNo,SystemModal,Exclamation', 'Codex Assistant - 缺少运行环境')
+if ($result -eq 'Yes') { Start-Process 'https://developer.microsoft.com/microsoft-edge/webview2/' }
+"#;
+        let _ = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+            .status();
+        std::process::exit(0);
+    }
+}
+
+/// Check if Microsoft Edge WebView2 Runtime is installed.
+fn check_webview2() -> bool {
+    let output = Command::new("reg")
+        .args(&["query", r"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}", "/v", "pv"])
+        .output();
+    match output {
+        Ok(o) => {
+            String::from_utf8_lossy(&o.stdout).contains("REG_SZ")
+        }
+        Err(_) => false,
+    }
+}
+
 fn main() {
+    // 启动前检测运行环境
+    check_runtime_environment();
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(NodeProcess(Mutex::new(None)))

@@ -1,4 +1,4 @@
-﻿import http from 'http';
+import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
@@ -229,15 +229,16 @@ LOG_LEVEL=info
     console.log('[ui] Created user/aux-model-config.json template');
   }
   
-  // 如果 message-trim-config.json 不存在，创建默认配置（默认开启）
+  // 如果 message-trim-config.json 不存在，创建默认配置（默认开启上下文裁剪）
   const trimConfigPath = path.join(USER_DIR, 'message-trim-config.json');
   if (!fs.existsSync(trimConfigPath)) {
     const trimConfigTemplate = {
       enabled: true,
-      keepToolRounds: 20
+      keepToolRounds: 20,
+      updatedAt: new Date().toISOString()
     };
     fs.writeFileSync(trimConfigPath, JSON.stringify(trimConfigTemplate, null, 2));
-    console.log('[ui] Created user/message-trim-config.json (enabled by default)');
+    console.log('[ui] Created user/message-trim-config.json (default: enabled)');
   }
 }
 
@@ -839,15 +840,16 @@ async function checkPortAvailable(port) {
   });
 }
 
-// 通过 netstat 查找占用指定端口的 PID（Windows）- 优化版
+// 通过 netstat 查找占用指定端口的 PID（Windows）
 function findPidByPort(port) {
   try {
-    // 只查询特定端口，比 netstat -ano 快很多
-    var output = execSync('netstat -ano | findstr :' + port, { encoding: 'utf8', timeout: 2000 });
+    var output = execSync('netstat -ano', { encoding: 'utf8', timeout: 3000 });
     var lines = output.split('\n');
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if (!line.includes('LISTENING')) continue;
+      if (!line.includes(':' + port)) continue;
+      // TCP    127.0.0.1:4000    0.0.0.0:0    LISTENING    12345
       var parts = line.trim().split(/\s+/);
       var pid = parseInt(parts[parts.length - 1], 10);
       if (pid > 0) return pid;
@@ -856,12 +858,11 @@ function findPidByPort(port) {
   return null;
 }
 
-// 判断 PID 是否属于我们自己的代理进程 - 优化版
+// 判断 PID 是否属于我们自己的代理进程（命令行包含 proxy.mjs）
 function isOurProxyProcess(pid) {
   try {
-    // 使用 tasklist 代替 wmic，速度更快
-    var output = execSync('tasklist /FI "PID eq ' + pid + '" /FO CSV /NH', { encoding: 'utf8', timeout: 2000 });
-    return output.includes('node.exe');
+    var output = execSync('wmic process where ProcessId=' + pid + ' get CommandLine /format:list', { encoding: 'utf8', timeout: 3000 });
+    return output.includes('proxy.mjs');
   } catch (e) { return false; }
 }
 
@@ -969,65 +970,9 @@ async function syncCodexConfig() {
 }
 
 // ==================== 代理进程管理 ====================
-
-// 清理残留的代理进程（启动前调用）
-async function cleanupOrphanedProxy() {
-  try {
-    var env = readEnv();
-    var port = parseInt(env.PROXY_PORT || '4000', 10);
-    
-    // 检查端口是否被占用
-    if (await checkPortAvailable(port)) {
-      return; // 端口可用，无需清理
-    }
-    
-    // 查找占用端口的进程
-    var owner = checkPortOwner(port);
-    if (owner && owner.pid) {
-      proxyLog.push({ 
-        time: new Date().toISOString(), 
-        type: 'system', 
-        msg: '发现残留代理进程(PID:' + owner.pid + ')，正在清理...' 
-      });
-      
-      // 强制终止进程树
-      killProcessTree(owner.pid);
-      
-      // 轮询等待进程退出（每 100ms 检测一次，最多等待 800ms）
-      var waitStart = Date.now();
-      while (Date.now() - waitStart < 800) {
-        if (await checkPortAvailable(port)) break;
-        await new Promise(function(r) { setTimeout(r, 100); });
-      }
-      
-      // 验证清理结果
-      if (!(await checkPortAvailable(port))) {
-        // 如果进程树终止失败，尝试通过端口杀进程
-        killProcessOnPort(port);
-        await new Promise(function(r) { setTimeout(r, 300); });
-      }
-      
-      proxyLog.push({ 
-        time: new Date().toISOString(), 
-        type: 'system', 
-        msg: '残留进程清理完成' 
-      });
-    }
-  } catch (e) {
-    proxyLog.push({ 
-      time: new Date().toISOString(), 
-      type: 'warning', 
-      msg: '清理残留进程时出错: ' + e.message 
-    });
-  }
-}
-
 async function startProxy() {
   if (proxyProcess) return { success: false, message: '代理已在运行中' };
   try { generateProxyModels(); } catch (e) { /* ignore */ }
-
-  // 启动前清理残留进程
-  await cleanupOrphanedProxy();
 
   // 检查是否已配置至少一个提供商（含有效 API Key）
   var currentProviders = readProviders();
@@ -1053,13 +998,7 @@ async function startProxy() {
       // 被我们自己的旧代理进程占用 → 终止后重用 4000
       proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '端口 ' + port + ' 被旧代理进程(PID:' + owner.pid + ')占用，正在终止并重用...' });
       killProcessByPid(owner.pid);
-      
-      // 轮询等待进程退出（每 100ms 检测一次，最多等待 1 秒）
-      var waitStart = Date.now();
-      while (Date.now() - waitStart < 1000) {
-        if (await checkPortAvailable(port)) break;
-        await new Promise(function(r) { setTimeout(r, 100); });
-      }
+      await new Promise(function(r) { setTimeout(r, 1500); });
 
       if (!(await checkPortAvailable(port))) {
         proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '端口 ' + port + ' 终止旧进程后仍不可用，切换端口' });
@@ -1084,34 +1023,7 @@ async function startProxy() {
   // 收集 stderr 输出用于诊断
   var stderrChunks = [];
   var envFilePath = path.join(USER_DIR, '.env');
-
-  // Node.js --env-file 需要 20.6.0+，低版本回退到 env 传递
-  var nodeVersion = process.versions.node.split('.').map(Number);
-  var supportsEnvFile = nodeVersion[0] > 20 || (nodeVersion[0] === 20 && nodeVersion[1] >= 6);
-
-  var spawnArgs = [];
-  if (supportsEnvFile && fs.existsSync(envFilePath)) {
-    spawnArgs = ['--env-file=' + envFilePath, proxyPath];
-  } else {
-    spawnArgs = [proxyPath];
-    if (!supportsEnvFile) {
-      proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '当前 Node.js 版本 ' + process.version + ' 不支持 --env-file 参数，已回退到环境变量模式。建议升级到 Node.js 20.6.0+ 以获得更好的兼容性。' });
-    }
-  }
-
-  // 使用 process.execPath 确保使用内置的 node.exe，而不是从系统 PATH 查找
-  var nodeExecPath = process.execPath;
-  
-  // 诊断信息：记录启动参数
-  proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '启动代理诊断: nodeExecPath=' + nodeExecPath });
-  proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '启动代理诊断: proxyPath=' + proxyPath });
-  proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '启动代理诊断: cwd=' + PROJECT_DIR });
-  proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '启动代理诊断: nodeExecPath exists=' + fs.existsSync(nodeExecPath) });
-  proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '启动代理诊断: proxyPath exists=' + fs.existsSync(proxyPath) });
-  proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '启动代理诊断: nodeExecPath has space=' + nodeExecPath.includes(' ') });
-  proxyLog.push({ time: new Date().toISOString(), type: 'system', msg: '启动代理诊断: nodeExecPath has \\\\\\?\\\\ prefix=' + nodeExecPath.startsWith('\\\\\\\\?\\\\') });
-  
-  proxyProcess = spawn(nodeExecPath, spawnArgs, {
+  proxyProcess = spawn('node', ['--env-file=' + envFilePath, proxyPath], {
     cwd: PROJECT_DIR,
     env: Object.assign({}, process.env, env, { CODASS_LOG_DIR: PROXY_LOG_DIR }),
     detached: false,
@@ -1145,12 +1057,8 @@ async function startProxy() {
     proxyProcess = null;
   });
 
-  // 轮询等待子进程稳定启动（每 100ms 检测一次，最多等待 1.5 秒）
-  var waitStart = Date.now();
-  while (Date.now() - waitStart < 1500) {
-    if (proxyProcess && proxyProcess.exitCode !== null) break;
-    await new Promise(function(r) { setTimeout(r, 100); });
-  }
+  // 等待子进程稳定启动（等 2 秒，给足时间让 Node.js 加载模块和检测错误）
+  await new Promise(function(r) { setTimeout(r, 2000); });
   if (proxyProcess && proxyProcess.exitCode !== null) {
     var exitCode = proxyProcess.exitCode;
     var failMsg = stderrChunks.join('\n').trim();
@@ -1204,7 +1112,7 @@ function stopProxy() {
     // 先用 taskkill /T /F 杀整个进程树，比 proc.kill 更可靠
     killProcessTree(proc.pid);
 
-    // 超时保护：1.5秒后强制终止
+    // 超时保护：3秒后强制终止
     var forceKill = setTimeout(() => {
       if (!proc.killed) {
         try { proc.kill('SIGKILL'); } catch {}
@@ -1839,7 +1747,7 @@ var MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 function collectBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks = [];
     let totalBytes = 0;
     let limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : MAX_REQUEST_BODY_BYTES;
     req.on('data', c => {
@@ -1850,9 +1758,9 @@ function collectBody(req, maxBytes) {
         req.destroy(err);
         return;
       }
-      body += c;
+      chunks.push(c);
     });
-    req.on('end', () => resolve(body));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
     req.on('error', reject);
   });
 }
@@ -2223,24 +2131,16 @@ const server = http.createServer(async (req, res) => {
       if (!urlCheck.valid) return sendJson(res, 400, { success: false, error: urlCheck.error });
       
       var models = await fetchModelsFromAPI(base_url, api_key);
-      logOperation("provider", "fetch-models", "Fetched " + (models.length || 0) + " models");
       return sendJson(res, 200, { success: true, models: models });
-    } catch (e) {
-      logOperation("provider", "fetch-models", "Failed to fetch models", e);
-      return sendJson(res, 500, { success: false, error: e.message });
-    }
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
 
   // API: 生成 user/proxy-models.json
   if (pathname === '/api/generate-models' && method === 'POST') {
     try {
       generateProxyModels();
-      logOperation('model', 'generate', 'Generated proxy-models.json');
       return sendJson(res, 200, { success: true, message: 'user/proxy-models.json 已生成' });
-    } catch (e) {
-      logOperation('model', 'generate', 'Failed to generate proxy-models.json', e);
-      return sendJson(res, 500, { success: false, error: e.message });
-    }
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
 
   // API: .env 读写
@@ -2414,10 +2314,7 @@ const server = http.createServer(async (req, res) => {
       if (zipPath === 'SKIPPED') return sendJson(res, 200, { skipped: true, message: '当前配置与上次备份配置相同，已为您自动跳过备份' });
       if (!zipPath) return sendJson(res, 400, { success: false, error: '没有可备份的 Codex 配置文件' });
       return sendJson(res, 200, { success: true, path: zipPath, message: '备份已创建' });
-    } catch (e) {
-      logOperation("backup", "create", "Failed to create backup", e);
-      return sendJson(res, 500, { success: false, error: e.message });
-    }
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
 
   // API: 恢复备份
@@ -2450,10 +2347,7 @@ const server = http.createServer(async (req, res) => {
       } finally {
         try { fs.rmSync(tempDir, { recursive: true }); } catch {}
       }
-    } catch (e) {
-      logOperation("backup", "restore", "Failed to restore backup", e);
-      return sendJson(res, 500, { success: false, error: e.message });
-    }
+    } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
 
   // API: 自动备份（首次启动时调用）
@@ -2480,6 +2374,28 @@ const server = http.createServer(async (req, res) => {
       const lockPath = zipPath + '.locked';
       if (fs.existsSync(lockPath)) return sendJson(res, 403, { success: false, error: '备份已锁定，请先解锁后再删除' });
       fs.unlinkSync(zipPath);
+      
+      // 删除备份后，清除哈希缓存，允许重新备份相同配置
+      try {
+        const backupDir = getCodexBackupDir();
+        const hashFile = path.join(backupDir, '.backup-hash');
+        if (fs.existsSync(hashFile)) {
+          // 检查是否还有其他备份文件存在
+          const remainingBackups = fs.readdirSync(backupDir).filter(f => f.endsWith('.zip'));
+          if (remainingBackups.length === 0) {
+            // 没有剩余备份，删除哈希文件
+            fs.unlinkSync(hashFile);
+            console.log('[backup] Cleared hash cache: no backups remaining');
+          } else {
+            // 还有备份，删除哈希文件以便下次备份时重新计算
+            fs.unlinkSync(hashFile);
+            console.log('[backup] Cleared hash cache: backup deleted, will re-check on next backup');
+          }
+        }
+      } catch (hashErr) {
+        console.warn('[backup] Failed to clear hash cache:', hashErr.message);
+      }
+      
       return sendJson(res, 200, { success: true });
     } catch (e) { return sendJson(res, 500, { success: false, error: e.message }); }
   }
@@ -2576,7 +2492,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/trim-config' && method === 'GET') {
     try {
       const trimPath = path.join(USER_DIR, 'message-trim-config.json');
-      let config = { enabled: false, keepToolRounds: 20 };
+      let config = { enabled: true, keepToolRounds: 20 };
       try { config = JSON.parse(fs.readFileSync(trimPath, 'utf-8')); } catch {}
       return sendJson(res, 200, config);
     } catch (e) { return sendJson(res, 500, { error: e.message }); }
@@ -2613,32 +2529,18 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/proxy/start' && method === 'POST') {
     // 启动前先同步配置
     const syncResult = await syncCodexConfig();
-    logOperation('proxy', 'start', 'Starting proxy');
     const result = await startProxy();
     result.synced = syncResult.synced;
-    if (result.success) {
-      logOperation('proxy', 'start', 'Proxy started on port ' + (result.port || '?'));
-    } else {
-      logOperation('proxy', 'start', 'Proxy failed to start: ' + (result.message || 'unknown'), new Error(result.message || 'start failed'));
-    }
     return sendJson(res, 200, result);
   }
   if (pathname === '/api/proxy/stop' && method === 'POST') {
-    logOperation('proxy', 'stop', 'Stopping proxy');
-    const stopResult = await stopProxy();
-    logOperation('proxy', 'stop', 'Proxy stopped');
-    return sendJson(res, 200, stopResult);
+    return sendJson(res, 200, stopProxy());
   }
   if (pathname === '/api/proxy/restart' && method === 'POST') {
-    logOperation('proxy', 'restart', 'Restarting proxy');
     await stopProxy();
-    await new Promise(r => setTimeout(r, 500));
+    // 等待端口释放
+    await new Promise(r => setTimeout(r, 1500));
     const result = await startProxy();
-    if (result.success) {
-      logOperation('proxy', 'restart', 'Proxy restarted on port ' + (result.port || '?'));
-    } else {
-      logOperation('proxy', 'restart', 'Proxy restart failed: ' + (result.message || 'unknown'), new Error(result.message || 'restart failed'));
-    }
     return sendJson(res, 200, result);
   }
 
@@ -2773,40 +2675,74 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // API: 保存文件（弹出保存对话框）
-  if (pathname === '/api/save-file' && method === 'POST') {
+  // API: 保存文件（弹窗选择保存位置）
+  if (pathname === '/api/save-file-dialog' && method === 'POST') {
     try {
       var body = await collectBody(req);
       var data = JSON.parse(body || '{}');
-      var title = data.title || '保存文件';
       var content = data.content || '';
-      var defaultName = data.defaultName || 'export.json';
-      var filter = data.filter || 'JSON 文件 (*.json)|*.json|所有文件 (*.*)|*.*';
-
+      var defaultName = data.defaultName || 'export.txt';
+      var filter = data.filter || '文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*';
+      
+      // PowerShell SaveFileDialog
+      var safeFilter = filter.replace(/"/g, '""');
+      var safeDefaultName = defaultName.replace(/"/g, '""');
+      
       var psScript = [
         'Add-Type -AssemblyName System.Windows.Forms',
         '$saveDialog = New-Object System.Windows.Forms.SaveFileDialog',
-        '$saveDialog.Title = "' + title.replace(/"/g, '""') + '"',
-        '$saveDialog.FileName = "' + defaultName.replace(/"/g, '""') + '"',
-        '$saveDialog.Filter = "' + filter + '"',
-        '$saveDialog.OverwritePrompt = $true',
+        '$saveDialog.Filter = "' + safeFilter + '"',
+        '$saveDialog.FileName = "' + safeDefaultName + '"',
+        '$saveDialog.DefaultExt = "txt"',
+        '$saveDialog.AddExtension = $true',
         '$result = $saveDialog.ShowDialog()',
         'if ($result -eq [System.Windows.Forms.DialogResult]::OK) {',
         '  $saveDialog.FileName',
         '}'
-      ];
-
-      var savePath = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript.join('\n')], {
+      ].join('\n');
+      
+      var selectedPath = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript], {
         encoding: 'utf8',
-        timeout: 60000
+        timeout: 120000
       }).trim();
-
-      if (savePath) {
-        fs.writeFileSync(savePath, content, 'utf-8');
-        return sendJson(res, 200, { success: true, path: savePath });
-      } else {
+      
+      if (!selectedPath) {
         return sendJson(res, 200, { success: false, message: '未选择保存路径' });
       }
+      
+      fs.writeFileSync(selectedPath, content, 'utf-8');
+      return sendJson(res, 200, { success: true, path: selectedPath });
+    } catch (e) {
+      return sendJson(res, 500, { success: false, error: e.message });
+    }
+  }
+
+  // API: 保存文件（直接保存到用户桌面，不弹窗，避免阻塞事件循环）
+  if (pathname === '/api/save-file' && method === 'POST') {
+    try {
+      var body = await collectBody(req);
+      var data = JSON.parse(body || '{}');
+      var content = data.content || '';
+      var defaultName = data.defaultName || 'export.json';
+
+      // 保存到用户桌面
+      var desktopDir = path.join(os.homedir(), 'Desktop');
+      if (!fs.existsSync(desktopDir)) {
+        fs.mkdirSync(desktopDir, { recursive: true });
+      }
+      var savePath = path.join(desktopDir, defaultName);
+      // 避免覆盖：加序号
+      if (fs.existsSync(savePath)) {
+        var ext = path.extname(defaultName);
+        var base = path.basename(defaultName, ext);
+        for (var idx = 1; idx < 100; idx++) {
+          savePath = path.join(desktopDir, base + '-' + idx + ext);
+          if (!fs.existsSync(savePath)) break;
+        }
+      }
+
+      fs.writeFileSync(savePath, content, 'utf-8');
+      return sendJson(res, 200, { success: true, path: savePath });
     } catch (e) {
       return sendJson(res, 500, { success: false, error: e.message });
     }
@@ -2989,6 +2925,113 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // API: 导出日志 - 返回日志内容供前端下载
+  if (pathname === '/api/logs/export-content' && method === 'GET') {
+    try {
+      var logDir = PROXY_LOG_DIR;
+      var lines = [];
+      var fileCount = 0;
+      if (fs.existsSync(logDir)) {
+        var files = fs.readdirSync(logDir)
+          .filter(function(f) { return f.match(/^proxy.*\.log$/); })
+          .sort(function(a, b) { return a.localeCompare(b); });
+        var recentFiles = files.slice(-10);
+        for (var i = 0; i < recentFiles.length; i++) {
+          try {
+            var fPath = path.join(logDir, recentFiles[i]);
+            var st = fs.statSync(fPath);
+            if (st.size > 5 * 1024 * 1024) {
+              lines.push('=== ' + recentFiles[i] + ' ===');
+              lines.push('[文件过大，已跳过]');
+              lines.push('');
+              continue;
+            }
+            var content = fs.readFileSync(fPath, 'utf8');
+            lines.push('=== ' + recentFiles[i] + ' ===');
+            lines.push(content.trim());
+            lines.push('');
+            fileCount++;
+          } catch (e) { /* skip */ }
+        }
+      }
+      if (proxyLog.length > 0) {
+        lines.push('=== 当前会话实时日志 ===');
+        for (var j = 0; j < proxyLog.length; j++) {
+          var l = proxyLog[j];
+          lines.push('[' + l.time + '] [' + l.type.toUpperCase() + '] ' + l.msg);
+        }
+        fileCount++;
+      }
+      var fullText = lines.join('\n');
+      if (!fullText.trim()) {
+        return sendJson(res, 200, { text: '', lineCount: 0, filesIncluded: 0 });
+      }
+      return sendJson(res, 200, { text: fullText, lineCount: fullText.split('\n').length, filesIncluded: fileCount });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // API: 导出日志并直接保存到桌面
+  if (pathname === '/api/logs/export-save' && method === 'POST') {
+    try {
+      var logDir = PROXY_LOG_DIR;
+      var lines = [];
+      var fileCount = 0;
+      if (fs.existsSync(logDir)) {
+        var files = fs.readdirSync(logDir)
+          .filter(function(f) { return f.match(/^proxy.*\.log$/); })
+          .sort(function(a, b) { return a.localeCompare(b); });
+        var recentFiles = files.slice(-10);
+        for (var i = 0; i < recentFiles.length; i++) {
+          try {
+            var fPath = path.join(logDir, recentFiles[i]);
+            var st = fs.statSync(fPath);
+            if (st.size > 5 * 1024 * 1024) {
+              lines.push('=== ' + recentFiles[i] + ' ===');
+              lines.push('[文件过大，已跳过]');
+              lines.push('');
+              continue;
+            }
+            var content = fs.readFileSync(fPath, 'utf8');
+            lines.push('=== ' + recentFiles[i] + ' ===');
+            lines.push(content.trim());
+            lines.push('');
+            fileCount++;
+          } catch (e) { /* skip */ }
+        }
+      }
+      if (proxyLog.length > 0) {
+        lines.push('=== 当前会话实时日志 ===');
+        for (var j = 0; j < proxyLog.length; j++) {
+          var l = proxyLog[j];
+          lines.push('[' + l.time + '] [' + l.type.toUpperCase() + '] ' + l.msg);
+        }
+        fileCount++;
+      }
+      var fullText = lines.join('\n');
+      if (!fullText.trim()) {
+        return sendJson(res, 200, { success: false, error: '没有可导出的日志' });
+      }
+      var desktopDir = path.join(os.homedir(), 'Desktop');
+      if (!fs.existsSync(desktopDir)) fs.mkdirSync(desktopDir, { recursive: true });
+      var defaultName = 'codex-assistant-log-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.txt';
+      var savePath = path.join(desktopDir, defaultName);
+      if (fs.existsSync(savePath)) {
+        var ext = '.txt';
+        var baseName = defaultName.replace(ext, '');
+        for (var idx = 1; idx < 100; idx++) {
+          savePath = path.join(desktopDir, baseName + '-' + idx + ext);
+          if (!fs.existsSync(savePath)) break;
+        }
+      }
+      fs.writeFileSync(savePath, fullText, 'utf-8');
+      return sendJson(res, 200, { success: true, path: savePath, lineCount: fullText.split('\n').length, filesIncluded: fileCount });
+    } catch (e) {
+      return sendJson(res, 500, { success: false, error: e.message });
+    }
+  }
+
   // API: 测试提供商连接
   if (pathname === '/api/providers/test-connection' && method === 'POST') {
     try {
@@ -3145,16 +3188,10 @@ const server = http.createServer(async (req, res) => {
   });
 
   // Clean up proxy child process on exit (prevents orphan proxy on Windows)
-  var _exitCleanupDone = false;
   function killProxyOnExit() {
-    if (_exitCleanupDone) return;
-    _exitCleanupDone = true;
-    
     // 1. 杀 proxy 子进程及其进程树（taskkill /T /F 比 proc.kill 更可靠）
     if (proxyProcess && !proxyProcess.killed) {
-      try {
-        killProcessTree(proxyProcess.pid);
-      } catch (e) { /* ignore */ }
+      killProcessTree(proxyProcess.pid);
     }
     // 2. 兜底：通过端口杀残留进程（proxy 端口）
     try {
@@ -3171,8 +3208,6 @@ const server = http.createServer(async (req, res) => {
   // 全局异常处理器：防止未捕获异常导致 ui-server 静默崩溃
   process.on('uncaughtException', function(err) {
     console.error('[ui] UNCAUGHT EXCEPTION:', err.stack || err.message || err);
-    // 不退出：ui-server 需要保持运行以管理代理进程
-    // 但记录到操作日志以便排查
     try { logOperation('system', 'error', '未捕获异常: ' + (err.message || String(err)), err); } catch {}
   });
   process.on('unhandledRejection', function(reason) {
@@ -3181,10 +3216,7 @@ const server = http.createServer(async (req, res) => {
     try { logOperation('system', 'error', '未处理的Promise拒绝: ' + msg); } catch {}
   });
   
-  // 注册多种退出信号，确保清理逻辑被执行
   process.on('exit', killProxyOnExit);
   process.on('SIGINT', function() { killProxyOnExit(); process.exit(0); });
   process.on('SIGTERM', function() { killProxyOnExit(); process.exit(0); });
-  process.on('SIGHUP', function() { killProxyOnExit(); process.exit(0); });
-  
 })(UI_PORT, 10);

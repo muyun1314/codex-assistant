@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 读取 version.json（唯一的版本号源头）
-const versionPath = path.join(__dirname, 'version.json');
+const versionPath = path.join(__dirname, 'src-tauri', 'resources', 'version.json');
 if (!fs.existsSync(versionPath)) {
   console.error('❌ version.json not found');
   process.exit(1);

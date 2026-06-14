@@ -329,7 +329,7 @@ async function exportConfig() {
   if (!confirm('配置文件将以明文形式保存，包含您的 API Key 等敏感信息。\n请妥善保管，切勿分享给不可信的第三方。\n\n确定导出？')) return;
   var d = await api('/api/export-config');
   var defaultName = 'codex-assistant-config-' + new Date().toISOString().slice(0, 10) + '.json';
-  var result = await api('/api/save-file', 'POST', {
+  var result = await api('/api/save-file-dialog', 'POST', {
     title: '导出配置',
     content: JSON.stringify(d, null, 2),
     defaultName: defaultName,

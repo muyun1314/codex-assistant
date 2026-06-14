@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 读取版本号
-const versionInfo = JSON.parse(fs.readFileSync(path.join(__dirname, 'version.json'), 'utf-8'));
+const versionInfo = JSON.parse(fs.readFileSync(path.join(__dirname, 'src-tauri', 'resources', 'version.json'), 'utf-8'));
 const VERSION = versionInfo.version;
 
 const DIST_DIR = path.join(__dirname, 'dist');
@@ -136,10 +136,6 @@ function copyResourcesFiltered(src, dest) {
 
 copyResourcesFiltered(RESOURCES_DIR, resourceDest);
 console.log('  Copied: resources/ (filtered)');
-
-// 复制版本和许可证文件
-fs.copyFileSync(path.join(__dirname, 'version.json'), path.join(portableDir, 'version.json'));
-fs.copyFileSync(path.join(__dirname, 'LICENSE'), path.join(portableDir, 'LICENSE'));
 
 // 创建便携版 zip
 console.log('📦 Creating portable zip...');

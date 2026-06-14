@@ -94,8 +94,8 @@ fs.copyFileSync(releaseExe, path.join(portableDir, 'codex-assistant.exe'));
 console.log('  Copied: codex-assistant.exe');
 
 // 排除的隐私目录和文件
-const EXCLUDED_DIRS = ['user', 'backup', 'log', 'node_modules', '.git'];
-const EXCLUDED_FILES = ['.env', 'provider-configs.json', 'aux-model-config.json'];
+const EXCLUDED_DIRS = ['user', 'backup', 'log', 'node_modules', '.git', '.env'];
+const EXCLUDED_FILES = ['.env', 'provider-configs.json', 'aux-model-config.json', '.env'];
 
 // 复制资源文件夹
 const resourceDest = path.join(portableDir, 'resources');

@@ -1086,40 +1086,7 @@ function responsesRequestToChatCompletions(body, provider) {
     }
   }
 
-  // Dynamically calculate MAX_MESSAGES based on the model's context window
-  var contextWindow = getModelContextWindow(body.model, MODEL_CONTEXT_WINDOWS);
-  var MAX_MESSAGES = calcMaxMessages(contextWindow);
-  log.info(`[proxy] model="${body.model}" context_window=${contextWindow} tokens, max_messages=${MAX_MESSAGES}`);
   var finalMessages = merged;
-  if (merged.length > MAX_MESSAGES) {
-    var head = merged.slice(0, 2);
-    var tail = merged.slice(-(MAX_MESSAGES - 3));
-    while (tail.length > 0 && tail[0].role === "tool") tail.shift();
-    finalMessages = [
-      ...head,
-      {
-        role: "user",
-        content: "[Earlier conversation trimmed. Do not repeat previous statements or tool calls you already made. Continue with the current task. If you have enough information, respond to the user instead of making more tool calls.]",
-      },
-      ...tail,
-    ];
-    var trimmedCount = merged.length - finalMessages.length;
-    _trimStats.totalTrimmed += trimmedCount;
-    _trimStats.totalRequests++;
-    _trimStats.lastTrimCount = trimmedCount;
-    log.info(`[proxy] trimmed ${merged.length} -> ${finalMessages.length} messages`);
-  }
-
-  // After trim we may have left orphan tool messages — re-normalise to drop them.
-  if (merged.length > MAX_MESSAGES) {
-    finalMessages = normalizeMessages(finalMessages);
-  }
-
-  var droppedAfterNormalize = messages.length - merged.length;
-  var droppedAfterFinalNormalize = merged.length > finalMessages.length ? merged.length - finalMessages.length : 0;
-  if (droppedAfterNormalize > 0 || droppedAfterFinalNormalize > 0) {
-    log.warn(`[proxy] message normalization dropped ${droppedAfterNormalize + droppedAfterFinalNormalize} invalid/orphan message(s) before upstream`);
-  }
 
   var req = {
     model: body.model,

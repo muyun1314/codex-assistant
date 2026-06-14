@@ -248,19 +248,27 @@ async function loadLogs() {
 async function exportLogs() {
   try {
     var d = await api('/api/logs/export');
-    var text = d.text || '';
-    if (!text.trim()) { toast('没有可导出的日志', 'error'); return; }
-    var defaultName = 'codex-assistant-log-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.txt';
-    var result = await api('/api/save-file', 'POST', {
-      title: '导出日志',
+    var text = (d && d.text) || '';
+    if (!text.trim()) { toast('没有可导出的日志', 'warning'); return; }
+
+    var now = new Date();
+    var defaultName = 'codex-assistant-log-' +
+      now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0') + '_' +
+      String(now.getHours()).padStart(2, '0') + '-' +
+      String(now.getMinutes()).padStart(2, '0') + '-' +
+      String(now.getSeconds()).padStart(2, '0') + '.txt';
+
+    var result = await api('/api/save-file-dialog', 'POST', {
       content: text,
       defaultName: defaultName,
-      filter: '文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*'
+      filter: '日志文件 (*.txt)|*.txt|所有文件 (*.*)|*.*'
     });
     if (result.success) {
       toast('日志已保存到: ' + result.path + '（共 ' + (d.lineCount || 0) + ' 行）');
-    } else if (result.message !== '未选择保存路径') {
-      toast('导出失败: ' + result.message, 'error');
+    } else if (result.message && result.message !== '未选择保存路径') {
+      toast('导出失败: ' + (result.message || result.error || '未知错误'), 'error');
     }
   } catch (e) {
     toast('导出日志失败: ' + e.message, 'error');

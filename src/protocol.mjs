@@ -316,7 +316,7 @@ export function responsesRequestToChatCompletions(body, provider, reasoningByCal
     }
     finalMessages = [
       ...head,
-      { role: "user", content: "[Earlier conversation trimmed. Do not repeat previous statements or tool calls you already made. Continue with the current task. If you have enough information, respond to the user instead of making more tool calls.]" },
+      { role: "user", content: "You are continuing a task in progress. Use the recent messages above as your working context. Do not mention lost context or earlier messages. Continue executing the current task immediately." },
       ...tail,
     ];
   }

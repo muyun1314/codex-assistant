@@ -1747,7 +1747,7 @@ var MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 function collectBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks = [];
     let totalBytes = 0;
     let limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : MAX_REQUEST_BODY_BYTES;
     req.on('data', c => {
@@ -1758,9 +1758,9 @@ function collectBody(req, maxBytes) {
         req.destroy(err);
         return;
       }
-      body += c;
+      chunks.push(c);
     });
-    req.on('end', () => resolve(body));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
     req.on('error', reject);
   });
 }
@@ -2675,40 +2675,74 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // API: 保存文件（弹出保存对话框）
-  if (pathname === '/api/save-file' && method === 'POST') {
+  // API: 保存文件（弹窗选择保存位置）
+  if (pathname === '/api/save-file-dialog' && method === 'POST') {
     try {
       var body = await collectBody(req);
       var data = JSON.parse(body || '{}');
-      var title = data.title || '保存文件';
       var content = data.content || '';
-      var defaultName = data.defaultName || 'export.json';
-      var filter = data.filter || 'JSON 文件 (*.json)|*.json|所有文件 (*.*)|*.*';
-
+      var defaultName = data.defaultName || 'export.txt';
+      var filter = data.filter || '文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*';
+      
+      // PowerShell SaveFileDialog
+      var safeFilter = filter.replace(/"/g, '""');
+      var safeDefaultName = defaultName.replace(/"/g, '""');
+      
       var psScript = [
         'Add-Type -AssemblyName System.Windows.Forms',
         '$saveDialog = New-Object System.Windows.Forms.SaveFileDialog',
-        '$saveDialog.Title = "' + title.replace(/"/g, '""') + '"',
-        '$saveDialog.FileName = "' + defaultName.replace(/"/g, '""') + '"',
-        '$saveDialog.Filter = "' + filter + '"',
-        '$saveDialog.OverwritePrompt = $true',
+        '$saveDialog.Filter = "' + safeFilter + '"',
+        '$saveDialog.FileName = "' + safeDefaultName + '"',
+        '$saveDialog.DefaultExt = "txt"',
+        '$saveDialog.AddExtension = $true',
         '$result = $saveDialog.ShowDialog()',
         'if ($result -eq [System.Windows.Forms.DialogResult]::OK) {',
         '  $saveDialog.FileName',
         '}'
-      ];
-
-      var savePath = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript.join('\n')], {
+      ].join('\n');
+      
+      var selectedPath = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript], {
         encoding: 'utf8',
-        timeout: 60000
+        timeout: 120000
       }).trim();
-
-      if (savePath) {
-        fs.writeFileSync(savePath, content, 'utf-8');
-        return sendJson(res, 200, { success: true, path: savePath });
-      } else {
+      
+      if (!selectedPath) {
         return sendJson(res, 200, { success: false, message: '未选择保存路径' });
       }
+      
+      fs.writeFileSync(selectedPath, content, 'utf-8');
+      return sendJson(res, 200, { success: true, path: selectedPath });
+    } catch (e) {
+      return sendJson(res, 500, { success: false, error: e.message });
+    }
+  }
+
+  // API: 保存文件（直接保存到用户桌面，不弹窗，避免阻塞事件循环）
+  if (pathname === '/api/save-file' && method === 'POST') {
+    try {
+      var body = await collectBody(req);
+      var data = JSON.parse(body || '{}');
+      var content = data.content || '';
+      var defaultName = data.defaultName || 'export.json';
+
+      // 保存到用户桌面
+      var desktopDir = path.join(os.homedir(), 'Desktop');
+      if (!fs.existsSync(desktopDir)) {
+        fs.mkdirSync(desktopDir, { recursive: true });
+      }
+      var savePath = path.join(desktopDir, defaultName);
+      // 避免覆盖：加序号
+      if (fs.existsSync(savePath)) {
+        var ext = path.extname(defaultName);
+        var base = path.basename(defaultName, ext);
+        for (var idx = 1; idx < 100; idx++) {
+          savePath = path.join(desktopDir, base + '-' + idx + ext);
+          if (!fs.existsSync(savePath)) break;
+        }
+      }
+
+      fs.writeFileSync(savePath, content, 'utf-8');
+      return sendJson(res, 200, { success: true, path: savePath });
     } catch (e) {
       return sendJson(res, 500, { success: false, error: e.message });
     }
@@ -2886,6 +2920,113 @@ const server = http.createServer(async (req, res) => {
       }
       var fullText = lines.join('\n');
       return sendJson(res, 200, { text: fullText, lineCount: fullText.split('\n').length, filesIncluded: fileCount });
+    } catch (e) {
+      return sendJson(res, 500, { success: false, error: e.message });
+    }
+  }
+
+  // API: 导出日志 - 返回日志内容供前端下载
+  if (pathname === '/api/logs/export-content' && method === 'GET') {
+    try {
+      var logDir = PROXY_LOG_DIR;
+      var lines = [];
+      var fileCount = 0;
+      if (fs.existsSync(logDir)) {
+        var files = fs.readdirSync(logDir)
+          .filter(function(f) { return f.match(/^proxy.*\.log$/); })
+          .sort(function(a, b) { return a.localeCompare(b); });
+        var recentFiles = files.slice(-10);
+        for (var i = 0; i < recentFiles.length; i++) {
+          try {
+            var fPath = path.join(logDir, recentFiles[i]);
+            var st = fs.statSync(fPath);
+            if (st.size > 5 * 1024 * 1024) {
+              lines.push('=== ' + recentFiles[i] + ' ===');
+              lines.push('[文件过大，已跳过]');
+              lines.push('');
+              continue;
+            }
+            var content = fs.readFileSync(fPath, 'utf8');
+            lines.push('=== ' + recentFiles[i] + ' ===');
+            lines.push(content.trim());
+            lines.push('');
+            fileCount++;
+          } catch (e) { /* skip */ }
+        }
+      }
+      if (proxyLog.length > 0) {
+        lines.push('=== 当前会话实时日志 ===');
+        for (var j = 0; j < proxyLog.length; j++) {
+          var l = proxyLog[j];
+          lines.push('[' + l.time + '] [' + l.type.toUpperCase() + '] ' + l.msg);
+        }
+        fileCount++;
+      }
+      var fullText = lines.join('\n');
+      if (!fullText.trim()) {
+        return sendJson(res, 200, { text: '', lineCount: 0, filesIncluded: 0 });
+      }
+      return sendJson(res, 200, { text: fullText, lineCount: fullText.split('\n').length, filesIncluded: fileCount });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  // API: 导出日志并保存到指定路径（旧接口，保留兼容）
+  if (pathname === '/api/logs/export-save' && method === 'POST') {
+    try {
+      var logDir = PROXY_LOG_DIR;
+      var lines = [];
+      var fileCount = 0;
+      if (fs.existsSync(logDir)) {
+        var files = fs.readdirSync(logDir)
+          .filter(function(f) { return f.match(/^proxy.*\.log$/); })
+          .sort(function(a, b) { return a.localeCompare(b); });
+        var recentFiles = files.slice(-10);
+        for (var i = 0; i < recentFiles.length; i++) {
+          try {
+            var fPath = path.join(logDir, recentFiles[i]);
+            var st = fs.statSync(fPath);
+            if (st.size > 5 * 1024 * 1024) {
+              lines.push('=== ' + recentFiles[i] + ' ===');
+              lines.push('[文件过大，已跳过]');
+              lines.push('');
+              continue;
+            }
+            var content = fs.readFileSync(fPath, 'utf8');
+            lines.push('=== ' + recentFiles[i] + ' ===');
+            lines.push(content.trim());
+            lines.push('');
+            fileCount++;
+          } catch (e) { /* skip */ }
+        }
+      }
+      if (proxyLog.length > 0) {
+        lines.push('=== 当前会话实时日志 ===');
+        for (var j = 0; j < proxyLog.length; j++) {
+          var l = proxyLog[j];
+          lines.push('[' + l.time + '] [' + l.type.toUpperCase() + '] ' + l.msg);
+        }
+        fileCount++;
+      }
+      var fullText = lines.join('\n');
+      if (!fullText.trim()) {
+        return sendJson(res, 200, { success: false, error: '没有可导出的日志' });
+      }
+      var desktopDir = path.join(os.homedir(), 'Desktop');
+      if (!fs.existsSync(desktopDir)) fs.mkdirSync(desktopDir, { recursive: true });
+      var defaultName = 'codex-assistant-log-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.txt';
+      var savePath = path.join(desktopDir, defaultName);
+      if (fs.existsSync(savePath)) {
+        var ext = '.txt';
+        var baseName = defaultName.replace(ext, '');
+        for (var idx = 1; idx < 100; idx++) {
+          savePath = path.join(desktopDir, baseName + '-' + idx + ext);
+          if (!fs.existsSync(savePath)) break;
+        }
+      }
+      fs.writeFileSync(savePath, fullText, 'utf-8');
+      return sendJson(res, 200, { success: true, path: savePath, lineCount: fullText.split('\n').length, filesIncluded: fileCount });
     } catch (e) {
       return sendJson(res, 500, { success: false, error: e.message });
     }
